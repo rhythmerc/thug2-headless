@@ -30,7 +30,13 @@ add_library(lzham STATIC ${LZHAM_DECOMP_SOURCES}
 target_include_directories(lzham PUBLIC ${LZHAM}/include PRIVATE ${LZHAM}/lzhamdecomp ${LZHAM}/lzhamcomp)
 target_compile_options(lzham PRIVATE -w "SHELL:-include stdint.h" "SHELL:-include limits.h")
 
-add_executable(thug2-headless app/headless_main.cpp compat/win_shim.cpp
+# The engine a host links (app/thug2_engine.h): the core, the headless backends and the lockstep turns.
+add_library(thug2_engine STATIC app/engine.cpp app/probe.cpp compat/win_shim.cpp
     backends/posix_disk.cpp backends/headless_gpu.cpp backends/scripted_input.cpp
-    backends/platform_linux.cpp backends/gamespy_stubs.cpp app/probe.cpp)
-target_link_libraries(thug2-headless PRIVATE thug2_core lzham ${CMAKE_SOURCE_DIR}/out/sdl3-install/lib/libSDL3.a pthread dl m)
+    backends/platform_linux.cpp backends/gamespy_stubs.cpp)
+target_link_libraries(thug2_engine PUBLIC thug2_core lzham ${CMAKE_SOURCE_DIR}/out/sdl3-install/lib/libSDL3.a pthread dl m)
+
+# A host on the command line: boots, steps with a scripted pad, logs the skater (app/drive_main.cpp).
+add_executable(thug2-drive app/drive_main.cpp)
+target_include_directories(thug2-drive PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(thug2-drive PRIVATE thug2_engine)
