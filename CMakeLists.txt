@@ -13,7 +13,7 @@ add_library(thug2_core STATIC ${CORE_SOURCES}
     ${IMGUI}/imgui.cpp ${IMGUI}/imgui_draw.cpp ${IMGUI}/imgui_tables.cpp ${IMGUI}/imgui_widgets.cpp)
 target_include_directories(thug2_core PUBLIC
     $ENV{HOME}/projects/thug2-decomp/src ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/compat ${CMAKE_SOURCE_DIR}/compat/generated
-    ${CMAKE_SOURCE_DIR}/out/generated ${CMAKE_SOURCE_DIR}/out/sdl3-install/include ${IMGUI}
+    ${CMAKE_SOURCE_DIR}/out/generated ${DEPS}/SDL3-3.2.30/include ${IMGUI}
     ${DEPS}/GSL-4.2.0/include ${DEPS}/lzham_codec-d379b1f9121e2197881c61cfc4713c78848bdfe7/include)
 target_compile_definitions(thug2_core PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS IMGUI_DISABLE_DEFAULT_FONT)
 target_compile_options(thug2_core PUBLIC -include ${CMAKE_SOURCE_DIR}/compat/msvc_crt.h -w -fno-strict-aliasing)
@@ -33,8 +33,12 @@ target_compile_options(lzham PRIVATE -w "SHELL:-include stdint.h" "SHELL:-includ
 # The engine a host links (app/thug2_engine.h): the core, the headless backends and the lockstep turns.
 add_library(thug2_engine STATIC app/engine.cpp app/probe.cpp world/col_writer.cpp compat/win_shim.cpp
     backends/posix_disk.cpp backends/headless_gpu.cpp backends/scripted_input.cpp
-    backends/platform_linux.cpp backends/gamespy_stubs.cpp)
-target_link_libraries(thug2_engine PUBLIC thug2_core lzham ${CMAKE_SOURCE_DIR}/out/sdl3-install/lib/libSDL3.a pthread dl m)
+    backends/platform_linux.cpp backends/gamespy_stubs.cpp backends/sdl_stubs.cpp)
+if(ANDROID)
+    target_link_libraries(thug2_engine PUBLIC thug2_core lzham log m)
+else()
+    target_link_libraries(thug2_engine PUBLIC thug2_core lzham pthread dl m)
+endif()
 
 # A host on the command line: boots, steps with a scripted pad, logs the skater (app/drive_main.cpp).
 add_executable(thug2-drive app/drive_main.cpp)
