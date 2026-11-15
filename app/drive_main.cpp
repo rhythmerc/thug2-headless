@@ -147,6 +147,10 @@ int main(int argc, char** argv)
         if (test && frame == 120) {
             const float spawn[3] = {50000.0F, 20.0F, 49700.0F};
             thug2_set_world(world.data(), static_cast<uint32_t>(world.size()), spawn, 0.0F);
+            // A ledge-height rail down the middle of the run, 30 units up, before the quarter pipe.
+            const float rail[2][3] = {{50000.0F, 30.0F, 49900.0F}, {50000.0F, 30.0F, 50080.0F}};
+            const uint32_t counts[1] = {2};
+            thug2_set_rails(rail, counts, 1);
             std::printf("DRIVE frame %u: the test world (%zu triangles) given\n", frame, world.size());
         }
         const Thug2Pad pad = pad_at(script, frame);
@@ -160,7 +164,8 @@ int main(int argc, char** argv)
         ++stepped;
         total_ms += ms;
         if (ms > worst_ms) worst_ms = ms;
-        if (frame % 30 == 0) {
+        static const uint32_t every = std::getenv("THUG2_EVERY") ? static_cast<uint32_t>(std::strtoul(std::getenv("THUG2_EVERY"), nullptr, 10)) : 30;
+        if (frame % every == 0) {
             if (skater.present) {
                 std::printf("DRIVE frame %u: at (%.1f, %.1f, %.1f) vel (%.1f, %.1f, %.1f) %s  [%.2f ms]\n", frame,
                             skater.position[0], skater.position[1], skater.position[2], skater.velocity[0],

@@ -7,6 +7,8 @@
 #include <array>
 #include <cstdio>
 #include <cstring>
+#include <algorithm>
+#include <array>
 #include <condition_variable>
 #include <mutex>
 #include <string>
@@ -26,6 +28,8 @@
 #include "engine/objects/entity.h"
 #include "formats/collision_format.h"
 #include "game/rider/test_view.h"
+#include "engine/objects/rail_manager.h"
+#include "game/skate/skate_module.h"
 #include "world/col_writer.h"
 #include "backends/backends.h"
 #include "engine/audio/audio_device.h"
@@ -76,6 +80,9 @@ struct Turns {
     float spawn[3] = {};
     float heading = 0.0F;
     bool world_pending = false;
+    // The host's rails (each a run of points), waiting likewise.
+    std::vector<std::vector<std::array<float, 3>>> rails;
+    bool rails_pending = false;
 };
 
 constexpr uint32_t kSkater = 0x5B8AB877; // Skater (the local skater's alias)
@@ -83,6 +90,53 @@ constexpr uint32_t kWorldChecksum = 0xA5000000; // the host world's collision ob
 
 // The host's world made a scene of collision beside the level's, and the skater put on it. On the game's thread,
 // during its turn.
+constexpr uint32_t kRailLabel = 0xA6000000; // the host rails' points' names (not a level node's: they have none)
+
+// The host's rails in place of the level's: the skate module's rail manager emptied (its node array let go, so the
+// grind code reads no level node for them) and given one rail point per point, each linked to the next with the box
+// of their segment, as GrindRailHub::add_from_node_array makes them.
+void apply_rails(Turns& t)
+{
+    if (objects::find_object(kSkater) == nullptr) return;
+    t.rails_pending = false;
+    objects::GrindRailHub* hub = modules::Skate::sole()->rail_manager().get();
+    if (!hub) return;
+    hub->tidy_up();
+    size_t count = 0;
+    for (auto& rail : t.rails) count += rail.size() >= 2 ? rail.size() : 0;
+    if (count == 0) return;
+    auto* points = static_cast<objects::GrindPoint*>(memory::alloc_block(static_cast<unsigned>(count * sizeof(objects::GrindPoint))));
+    std::memset(static_cast<void*>(points), 0, count * sizeof(objects::GrindPoint));
+    size_t at = 0;
+    uint32_t label = kRailLabel;
+    for (auto& rail : t.rails) {
+        if (rail.size() < 2) continue;
+        const size_t first = at;
+        for (size_t i = 0; i < rail.size(); ++i) {
+            objects::GrindPoint& p = points[at + i];
+            p.at_point() = {rail[i][0], rail[i][1], rail[i][2], 1.0F};
+            p.flag_bits() = objects::kRailFlagActive;
+            p.set_label(++label);
+            p.lower_limit() = p.at_point();
+            p.upper_limit() = p.at_point();
+        }
+        for (size_t i = 0; i + 1 < rail.size(); ++i) {
+            objects::GrindPoint& p = points[at + i];
+            objects::GrindPoint& next = points[at + i + 1];
+            const maths::Vec4& a = p.at_point();
+            const maths::Vec4& b = next.at_point();
+            p.set_succ(&next);
+            next.last_value() = &p;
+            p.lower_limit() = {std::min(a.x, b.x), std::min(a.y, b.y), std::min(a.z, b.z), 1.0F};
+            p.upper_limit() = {std::max(a.x, b.x), std::max(a.y, b.y), std::max(a.z, b.z), 1.0F};
+        }
+        at = first + rail.size();
+    }
+    hub->set_nodes(points);
+    hub->set_num(static_cast<int>(count));
+    get_log("thug2: host rails: %zu rails, %zu points", t.rails.size(), count);
+}
+
 void apply_world(Turns& t)
 {
     if (objects::find_object(kSkater) == nullptr) return; // (not in the level yet: the next turn)
@@ -128,6 +182,7 @@ public:
         t.at_top = false;
         ++t.frames;
         if (t.world_pending) apply_world(t);
+        if (t.rails_pending && !t.world_pending) apply_rails(t);
         pace->flat_out = true;
         pace->skip_draw = true;
         return true;
@@ -259,6 +314,22 @@ extern "C" int thug2_set_world(const Thug2Triangle* triangles, uint32_t count, c
     std::memcpy(t.spawn, spawn, sizeof(t.spawn));
     t.heading = heading_degrees;
     t.world_pending = true;
+    return 0;
+}
+
+extern "C" int thug2_set_rails(const float (*points)[3], const uint32_t* counts, uint32_t rail_count)
+{
+    if (!points || !counts) return 1;
+    Turns& t = turns();
+    std::lock_guard<std::mutex> lock(t.mutex);
+    t.rails.clear();
+    size_t at = 0;
+    for (uint32_t r = 0; r < rail_count; ++r) {
+        std::vector<std::array<float, 3>> rail;
+        for (uint32_t i = 0; i < counts[r]; ++i, ++at) rail.push_back({points[at][0], points[at][1], points[at][2]});
+        t.rails.push_back(std::move(rail));
+    }
+    t.rails_pending = true;
     return 0;
 }
 

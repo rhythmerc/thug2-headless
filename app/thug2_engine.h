@@ -63,6 +63,10 @@ int thug2_step(const Thug2Pad* pad, Thug2Skater* skater);
  * on its board at `spawn` facing `heading_degrees` (0: +z). Taken at the start of the next step, once the skater is
  * in the level. Returns 0 if the triangles were taken (it copies them). */
 int thug2_set_world(const Thug2Triangle* triangles, uint32_t count, const float spawn[3], float heading_degrees);
+/* The host's rails, in place of the level's: `rail_count` polylines, rail i being counts[i] points (x, y, z, game
+ * units) taken in turn from `points`. Grinding works on them as on a level's rails; they run no level scripts.
+ * Taken with the world (at the start of the next step once the skater is in the level). Returns 0 if taken. */
+int thug2_set_rails(const float (*points)[3], const uint32_t* counts, uint32_t rail_count);
 /* Asks the game to end (its next frame quits the loop). */
 void thug2_quit(void);
 
