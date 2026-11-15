@@ -15,6 +15,8 @@
 #include <cstdlib>
 #include <array>
 #include <string>
+#include <map>
+#include <set>
 #include <vector>
 
 namespace {
@@ -238,6 +240,42 @@ const char* state_name(int state)
     return state >= 0 && state <= 5 ? names[state] : "?";
 }
 
+// `THUG2_SOUNDS=<folder>`: each voice the game starts is logged (DRIVE sound ...), and each sound it plays is written
+// to the folder once as a .wav, to listen to.
+void log_sounds(uint32_t frame)
+{
+    static const char* folder = std::getenv("THUG2_SOUNDS");
+    if (!folder) return;
+    static std::map<uint32_t, uint32_t> starts; // voice -> starts seen
+    static std::set<uint32_t> written;
+    std::vector<Thug2Voice> voices(thug2_sound_voices(nullptr, 0));
+    voices.resize(thug2_sound_voices(voices.data(), static_cast<uint32_t>(voices.size())));
+    for (const Thug2Voice& v : voices) {
+        static const uint32_t every = std::getenv("THUG2_EVERY") ? static_cast<uint32_t>(std::strtoul(std::getenv("THUG2_EVERY"), nullptr, 10)) : 30;
+        if (v.looping && frame % every == 0) {
+            std::printf("DRIVE frame %u: sound %u looping on voice %u volume %d pan %d at %u Hz\n", frame, v.sound, v.voice, v.volume, v.pan, v.frequency);
+        }
+        if (starts[v.voice] == v.starts) continue;
+        starts[v.voice] = v.starts;
+        std::printf("DRIVE frame %u: sound %u on voice %u%s volume %d pan %d at %u Hz\n", frame, v.sound, v.voice,
+                    v.looping ? " looping" : "", v.volume, v.pan, v.frequency);
+        if (!written.insert(v.sound).second) continue;
+        Thug2Sound info{};
+        if (thug2_sound(v.sound, &info, nullptr, 0) != 0) continue;
+        std::vector<int16_t> samples(info.samples);
+        thug2_sound(v.sound, nullptr, samples.data(), info.samples);
+        const std::string name = std::string(folder) + "/sound-" + std::to_string(v.sound) + ".wav";
+        FILE* f = std::fopen(name.c_str(), "wb");
+        if (!f) continue;
+        const uint32_t data = info.samples * 2, channels = info.channels ? info.channels : 1;
+        const uint32_t header[] = {0x46464952, 36 + data, 0x45564157, 0x20746D66, 16, 1 | channels << 16, info.rate,
+                                   info.rate * channels * 2, (channels * 2) | 16 << 16, 0x61746164, data};
+        std::fwrite(header, sizeof(header), 1, f);
+        std::fwrite(samples.data(), 2, samples.size(), f);
+        std::fclose(f);
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -289,6 +327,7 @@ int main(int argc, char** argv)
         total_ms += ms;
         if (ms > worst_ms) worst_ms = ms;
         if (ms > 20.0) std::printf("DRIVE frame %u took %.0f ms\n", frame, ms);
+        log_sounds(frame);
         static const uint32_t every = std::getenv("THUG2_EVERY") ? static_cast<uint32_t>(std::strtoul(std::getenv("THUG2_EVERY"), nullptr, 10)) : 30;
         if (frame % every == 0) {
             if (skater.present) {

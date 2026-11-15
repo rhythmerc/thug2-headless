@@ -36,6 +36,9 @@ render::Gpu& headless_gpu();
 render::GpuContext& headless_gpu_context();
 render::UiBackend& headless_ui_backend();
 audio::Device& null_audio_device();
+// The sound output a host plays (capture_audio.cpp), and its clock: a game frame has passed.
+audio::Device& capture_audio_device();
+void sound_frame_done();
 media::Movie& null_movie();
 net::Transport& null_transport();
 input::Source& scripted_input();

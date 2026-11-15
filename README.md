@@ -1,7 +1,7 @@
 # thug2-headless
 
 [thug2-decomp](https://github.com/CanuckAussieKev/thug2-decomp)'s game code (Tony Hawk's Underground 2) built as a
-library a host steps one game frame at a time, with no window, no rendering and no sound: the skater's physics,
+library a host steps one game frame at a time, with no window and no rendering or sound of its own: the skater's physics,
 tricks and scripts, running on the host's own collision and rails. It is the THUG2 engine of
 [skate3-quest-ar](https://github.com/rhythmerc/skate3-quest-ar) (a Quest 3 AR skateboarding app), which links it through
 its `thug2-sys` crate.
@@ -24,6 +24,12 @@ It builds on Linux (x86-64) and Android (arm64, NDK r26) with clang.
   world replaces the last.
 - `thug2_set_rails(points, counts, rails)`: the host's rails, in place of the level's.
 - `thug2_teleport(spawn, heading)`, `thug2_set_cache_dir(folder)`, `thug2_quit()`.
+- The skater's look, for a host that draws it: `thug2_skater_meshes`, `thug2_skater_mesh_data`, `thug2_skater_texture`,
+  `thug2_skater_pose`.
+- The game's sound effects, for a host that plays them: `thug2_sound_voices` (each voice playing: its sound, once or
+  looping, volume, pan and frequency) and `thug2_sound` (a sound's 16-bit PCM). The sound output
+  (`backends/capture_audio.cpp`) plays nothing itself; it keeps what the game asks of it. Streams (music, speech)
+  aren't played.
 
 The units are the game's: inches, y up. Steering left while facing +z turns towards +x, as in a right-handed frame.
 
@@ -71,7 +77,8 @@ THUG2_GAME_DIR=<your THUG2 folder, holding Data> THUG2_WORLD=test THUG2_FRAMES=3
 
 This gives a small test park (a floor, a quarter pipe with a deck, a wall and a rail) at frame 120. The skater
 pushes, ollies and grinds the rail; every 30 frames it logs where it is and what it is doing. `app/drive_main.cpp`
-lists the options. `tools/quest-run.sh` runs the same test on a Quest over adb.
+lists the options (`THUG2_SOUNDS=<folder>` logs the sounds the game plays and writes each to a .wav).
+`tools/quest-run.sh` runs the same test on a Quest over adb.
 `tools/default-level-files.txt` lists the game files such a run reads.
 
 ## Licence

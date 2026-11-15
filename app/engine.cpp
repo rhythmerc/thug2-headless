@@ -260,14 +260,14 @@ int run_game(int argc, char** argv)
     render::install_gpu(headless::headless_gpu());
     render::install_gpu_context(headless::headless_gpu_context());
     render::install_ui_backend(headless::headless_ui_backend());
-    audio::install_device(headless::null_audio_device());
+    audio::install_device(headless::capture_audio_device());
     media::install_movie(headless::null_movie());
     input::add_source(headless::scripted_input());
     // (no loading console panel: it is an ImGui overlay, and headless draws nothing)
     sys::run_startup_initialisers();
 
     // sys::win_main's part that matters without a window: the PC set-up (settings, script patches, the event pump),
-    // the sound output (none), then the game's main with the command line's words.
+    // the sound output (the host's, capture_audio.cpp), then the game's main with the command line's words.
     // (no window to give it the focus: the game is active from the start, or its main loop idles)
     sys::set_app_active(true);
     // (PS2 controls - as the game's own settings default them, read only by the SDL input this harness doesn't run:
@@ -348,6 +348,7 @@ extern "C" int thug2_step(const Thug2Pad* pad, Thug2Skater* skater)
         if (t.ended) return 1;
     }
     // (the game waits at the top of its loop: its state is still)
+    headless::sound_frame_done();
     if (skater) {
         headless::read_skater(skater);
         skater->frame = t.frames;

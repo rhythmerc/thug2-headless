@@ -85,7 +85,7 @@ option(THUG2_DRIVE "build thug2-drive" ON)
 
 # The engine a host links (app/thug2_engine.h): the core, the headless backends and the lockstep turns.
 add_library(thug2_engine STATIC app/engine.cpp app/probe.cpp app/skater_model.cpp world/col_writer.cpp
-    backends/posix_disk.cpp backends/headless_gpu.cpp backends/scripted_input.cpp)
+    backends/posix_disk.cpp backends/headless_gpu.cpp backends/capture_audio.cpp backends/scripted_input.cpp)
 if(ANDROID)
     target_link_libraries(thug2_engine PUBLIC thug2_core lzham log m)
 else()

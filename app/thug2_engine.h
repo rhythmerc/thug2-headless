@@ -137,6 +137,36 @@ uint32_t thug2_skater_texture(uint32_t index, Thug2Texture* out, void* bits, uin
  * bones (0: no skater). */
 uint32_t thug2_skater_pose(float (*palette)[16], uint32_t max, float draw_matrix[16]);
 
+/* --- The game's sound effects, for a host that plays them. Read between steps. ---
+ *
+ * The game plays its sounds on voices: a voice plays one sound (16-bit PCM, kept once however many voices play it),
+ * once or looping, at a volume, pan and frequency. The volume is the sound's own, with its fall-off from the game's
+ * camera (the skater's sounds come from the skater: a host in which the skater is somewhere places them there). A voice
+ * is listed while it plays; `starts` changes each time the game plays it again from its start. Streams (music,
+ * speech) aren't played here. */
+typedef struct Thug2Voice {
+    uint32_t voice;     /* the same while the game keeps this voice's buffer */
+    uint32_t sound;     /* thug2_sound's */
+    uint32_t starts;
+    uint8_t looping;
+    uint8_t pad[3];
+    int32_t volume;     /* hundredths of a decibel: -10000 silent ... 0 full */
+    int32_t pan;        /* hundredths of a decibel, left negative (as the game's camera hears it) */
+    uint32_t frequency; /* samples a second to play it at */
+    uint32_t rate;      /* the sound's own (frequency / rate: how fast it plays) */
+} Thug2Voice;
+typedef struct Thug2Sound {
+    uint16_t channels;
+    uint16_t pad;
+    uint32_t rate;    /* its own samples a second */
+    uint32_t samples; /* 16-bit samples, interleaved by channel */
+} Thug2Sound;
+
+/* The voices playing into `out` (at most `max`); how many there are. */
+uint32_t thug2_sound_voices(Thug2Voice* out, uint32_t max);
+/* Sound `sound`'s description, and (with `samples`, room for `count`) its samples. 0, or non-zero if there's none. */
+int thug2_sound(uint32_t sound, Thug2Sound* out, int16_t* samples, uint32_t count);
+
 #ifdef __cplusplus
 }
 #endif
