@@ -16,6 +16,7 @@
 #include <vector>
 
 #include <climits>
+#include <pthread.h>
 #include <cstdlib>
 #include <unistd.h>
 
@@ -304,13 +305,25 @@ extern "C" int thug2_boot(const char* game_dir, int argc, const char* const* arg
     words.assign(argv, argv + argc);
     pointers.clear();
     for (std::string& w : words) pointers.push_back(w.data());
-    std::thread([] {
+    // (a thread of its own with a desktop-sized stack: a host's - Android's 1 MB - may be too small for the game)
+    pthread_attr_t attributes;
+    pthread_attr_init(&attributes);
+    pthread_attr_setstacksize(&attributes, 16U << 20U);
+    pthread_attr_setdetachstate(&attributes, PTHREAD_CREATE_DETACHED);
+    pthread_t thread;
+    const int started = pthread_create(&thread, &attributes, [](void*) -> void* {
         run_game(static_cast<int>(pointers.size()), pointers.data());
         Turns& t = turns();
         std::lock_guard<std::mutex> lock(t.mutex);
         t.ended = true;
         t.changed.notify_all();
-    }).detach();
+        return nullptr;
+    }, nullptr);
+    pthread_attr_destroy(&attributes);
+    if (started != 0) {
+        std::fprintf(stderr, "thug2: the game's thread didn't start\n");
+        return 1;
+    }
     Turns& t = turns();
     std::unique_lock<std::mutex> lock(t.mutex);
     t.changed.wait(lock, [&] { return t.at_top || t.ended; });
