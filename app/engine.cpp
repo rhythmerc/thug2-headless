@@ -20,6 +20,13 @@
 #include "app/startup.h"
 #include "app/probe.h"
 #include "app/thug2_engine.h"
+#include "engine/gfx/engine_scene.h"
+#include "engine/gfx/engine_scene_list.h"
+#include "engine/memory/mem.h"
+#include "engine/objects/entity.h"
+#include "formats/collision_format.h"
+#include "game/rider/test_view.h"
+#include "world/col_writer.h"
 #include "backends/backends.h"
 #include "engine/audio/audio_device.h"
 #include "engine/audio/music_player.h"
@@ -64,7 +71,40 @@ struct Turns {
     bool ended = false;
     Thug2Pad pad{0x80, 0x80, 0x80, 0x80, 0};
     uint32_t frames = 0;
+    // A world the host gave, waiting for the game's turn (and for the skater to be in the level).
+    std::vector<headless::CollisionTriangle> world;
+    float spawn[3] = {};
+    float heading = 0.0F;
+    bool world_pending = false;
 };
+
+constexpr uint32_t kSkater = 0x5B8AB877; // Skater (the local skater's alias)
+constexpr uint32_t kWorldChecksum = 0xA5000000; // the host world's collision objects (any checksums not a level's)
+
+// The host's world made a scene of collision beside the level's, and the skater put on it. On the game's thread,
+// during its turn.
+void apply_world(Turns& t)
+{
+    if (objects::find_object(kSkater) == nullptr) return; // (not in the level yet: the next turn)
+    t.world_pending = false;
+    std::vector<uint8_t> file = headless::write_collision(t.world, kWorldChecksum);
+    collision_format::CollisionHeader header;
+    collision_format::CollisionLayout layout;
+    if (!collision_format::lay_out_collision(file, &header, &layout) || !collision_format::check_collision_objects(file, header, layout)) {
+        get_log("thug2: the host world's collision doesn't check out (%zu bytes) - not added", file.size());
+        return;
+    }
+    // (the game keeps reading the collision from these bytes: the scene's for its life)
+    auto* data = static_cast<uint8_t*>(memory::alloc(static_cast<unsigned>(file.size())));
+    std::memcpy(data, file.data(), file.size());
+    render::WorldScene* scene = render::build_world_scene("HostWorld", nullptr, false);
+    scene->set_builds_collision_grid(true);
+    scene->add_collision_data(data, file.size(), 0);
+    get_log("thug2: host world added: %zu triangles, %zu bytes of collision", t.world.size(), file.size());
+    frontend::test_view::Vec3 at{};
+    const std::string failed = frontend::test_view::jump_to({.x = t.spawn[0], .y = t.spawn[1], .z = t.spawn[2]}, true, t.heading, &at, true);
+    get_log("thug2: skater %s", failed.empty() ? "put on the host world" : failed.c_str());
+}
 
 // (never destroyed: the game's thread may still be waiting on it when its host exits)
 Turns& turns()
@@ -87,6 +127,7 @@ public:
         t.go = false;
         t.at_top = false;
         ++t.frames;
+        if (t.world_pending) apply_world(t);
         pace->flat_out = true;
         pace->skip_draw = true;
         return true;
@@ -199,6 +240,25 @@ extern "C" int thug2_step(const Thug2Pad* pad, Thug2Skater* skater)
         headless::read_skater(skater);
         skater->frame = t.frames;
     }
+    return 0;
+}
+
+extern "C" int thug2_set_world(const Thug2Triangle* triangles, uint32_t count, const float spawn[3], float heading_degrees)
+{
+    if (!triangles || count == 0) return 1;
+    Turns& t = turns();
+    std::lock_guard<std::mutex> lock(t.mutex);
+    t.world.clear();
+    for (uint32_t i = 0; i < count; ++i) {
+        headless::CollisionTriangle tri{};
+        std::memcpy(tri.v, triangles[i].v, sizeof(tri.v));
+        tri.flags = triangles[i].flags;
+        tri.terrain = triangles[i].terrain;
+        t.world.push_back(tri);
+    }
+    std::memcpy(t.spawn, spawn, sizeof(t.spawn));
+    t.heading = heading_degrees;
+    t.world_pending = true;
     return 0;
 }
 

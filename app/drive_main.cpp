@@ -8,8 +8,10 @@
 #include "app/thug2_engine.h"
 
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <array>
 #include <string>
 #include <vector>
 
@@ -70,6 +72,50 @@ Thug2Pad pad_at(const std::vector<Press>& script, uint32_t frame)
     return pad;
 }
 
+// THUG2_WORLD=test: a small park far from the level (around x = z = 50000, the floor at y = 0), in game units
+// (inches): an 800-inch floor, a 10-foot quarter pipe at +z (its top third vert) with a deck behind it, and a
+// wallride wall along -x. THUG2_WINDING=flip turns every triangle round.
+std::vector<Thug2Triangle> test_world()
+{
+    std::vector<Thug2Triangle> out;
+    const bool flip = std::getenv("THUG2_WINDING") && std::string(std::getenv("THUG2_WINDING")) == "flip";
+    const float cx = 50000.0F, cz = 50000.0F;
+    auto tri = [&](const float a[3], const float b[3], const float c[3], uint16_t flags) {
+        Thug2Triangle t{};
+        const float* v[3] = {a, b, c};
+        if (flip) std::swap(v[1], v[2]);
+        for (int i = 0; i < 3; ++i)
+            for (int k = 0; k < 3; ++k) t.v[i][k] = v[i][k];
+        t.flags = flags;
+        out.push_back(t);
+    };
+    // A quad a b c d (counter-clockwise seen from its front) as two triangles.
+    auto quad = [&](std::array<float, 3> a, std::array<float, 3> b, std::array<float, 3> c, std::array<float, 3> d, uint16_t flags) {
+        tri(a.data(), b.data(), c.data(), flags);
+        tri(a.data(), c.data(), d.data(), flags);
+    };
+    const float half = 400.0F;
+    const float qp_start = cz + 100.0F; // where the quarter pipe's curve starts (along +z)
+    const float radius = 120.0F;
+    // The floor, up to the quarter pipe.
+    quad({cx - half, 0, cz - half}, {cx - half, 0, qp_start}, {cx + half, 0, qp_start}, {cx + half, 0, cz - half}, THUG2_FACE_SKATABLE);
+    // The quarter pipe: 12 steps of a quarter circle from flat to vertical, along +z; the steep top third vert.
+    const int steps = 12;
+    for (int i = 0; i < steps; ++i) {
+        const double a0 = (M_PI / 2) * i / steps, a1 = (M_PI / 2) * (i + 1) / steps;
+        const float z0 = qp_start + radius * static_cast<float>(std::sin(a0)), y0 = radius * static_cast<float>(1 - std::cos(a0));
+        const float z1 = qp_start + radius * static_cast<float>(std::sin(a1)), y1 = radius * static_cast<float>(1 - std::cos(a1));
+        const uint16_t flags = THUG2_FACE_SKATABLE | (i >= steps * 2 / 3 ? THUG2_FACE_VERT : 0);
+        quad({cx - half, y0, z0}, {cx - half, y1, z1}, {cx + half, y1, z1}, {cx + half, y0, z0}, flags);
+    }
+    // The deck behind it.
+    const float top_z = qp_start + radius;
+    quad({cx - half, radius, top_z}, {cx - half, radius, top_z + 60}, {cx + half, radius, top_z + 60}, {cx + half, radius, top_z}, THUG2_FACE_SKATABLE);
+    // A wallride wall along -x, facing +x.
+    quad({cx - half, 0, cz - half}, {cx - half, 120, cz - half}, {cx - half, 120, qp_start}, {cx - half, 0, qp_start}, THUG2_FACE_WALL | THUG2_FACE_SKATABLE);
+    return out;
+}
+
 const char* state_name(int state)
 {
     static const char* names[] = {"ground", "air", "wall", "lip", "rail", "wallplant"};
@@ -94,7 +140,15 @@ int main(int argc, char** argv)
     double total_ms = 0;
     double worst_ms = 0;
     uint32_t stepped = 0;
+    const bool test = std::getenv("THUG2_WORLD") && std::string(std::getenv("THUG2_WORLD")) == "test";
+    const std::vector<Thug2Triangle> world = test ? test_world() : std::vector<Thug2Triangle>{};
     for (uint32_t frame = 1; frame <= frames; ++frame) {
+        // (the world once the level has put the skater at its own start, else that start overrides ours)
+        if (test && frame == 120) {
+            const float spawn[3] = {50000.0F, 20.0F, 49700.0F};
+            thug2_set_world(world.data(), static_cast<uint32_t>(world.size()), spawn, 0.0F);
+            std::printf("DRIVE frame %u: the test world (%zu triangles) given\n", frame, world.size());
+        }
         const Thug2Pad pad = pad_at(script, frame);
         Thug2Skater skater{};
         const auto start = clock::now();

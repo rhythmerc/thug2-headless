@@ -39,12 +39,30 @@ typedef struct Thug2Skater {
     uint32_t frame;
 } Thug2Skater;
 
+/* A triangle of the host's world, game units, with its face flags (THUG2's collision flags). Its front - the side
+ * the skater rides on - is where (v[1] - v[0]) x (v[2] - v[0]) points: a face wound the other way is passed through. */
+enum {
+    THUG2_FACE_SKATABLE = 0x1,
+    THUG2_FACE_NOT_SKATABLE = 0x2,
+    THUG2_FACE_WALL = 0x4, /* wallridable */
+    THUG2_FACE_VERT = 0x8, /* a quarter pipe's vertical part: the skater goes straight up and lands back in */
+};
+typedef struct Thug2Triangle {
+    float v[3][3];
+    uint16_t flags;
+    uint16_t terrain;
+} Thug2Triangle;
+
 /* Boots the game from `game_dir` (the folder holding Data/) with the game's command line (e.g. "-level", "BO").
  * Returns 0 when the first frame is ready; non-zero if the game ended before it got there. */
 int thug2_boot(const char* game_dir, int argc, const char* const* argv);
 /* One frame with `pad` (null: at rest); `skater` (may be null) as the frame left it. Returns 0, or non-zero once the
  * game has ended. */
 int thug2_step(const Thug2Pad* pad, Thug2Skater* skater);
+/* The host's world as collision the game skates (a scene of its own, added beside the level's), and the skater put
+ * on its board at `spawn` facing `heading_degrees` (0: +z). Taken at the start of the next step, once the skater is
+ * in the level. Returns 0 if the triangles were taken (it copies them). */
+int thug2_set_world(const Thug2Triangle* triangles, uint32_t count, const float spawn[3], float heading_degrees);
 /* Asks the game to end (its next frame quits the loop). */
 void thug2_quit(void);
 
