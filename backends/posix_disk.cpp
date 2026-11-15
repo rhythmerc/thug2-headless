@@ -9,7 +9,10 @@
 
 #include <windows.h>
 
+#include <cctype>
 #include <cerrno>
+#include <cstdlib>
+#include <cstring>
 #include <cstdio>
 #include <ctime>
 #include <filesystem>
@@ -124,10 +127,73 @@ std::string resolve(const char* path)
     return out;
 }
 
+// The developer-only Default level ships without a scene or nodes (only its scripts and sky): its scene, texture
+// dictionary and node file (levels\Default\Default.qb: the NodeArray) are answered with the sky's own - a scene of a
+// few kilobytes and its one geometry node - so the level loads as a near-empty one the host's world is put into (in
+// place of a stock level's megabytes). Only where the game folder has no file of its own.
+// The sky's node file as Default's: its NodeArray (the sky's one geometry node) renamed Default_NodeArray - the name
+// the game looks for in levels\\Default\\Default.qb - in a copy kept in the harness's cache folder.
+std::string default_nodes_from(const std::string& sky_qb)
+{
+    constexpr uint32_t kNodeArray = 0xC472ECC5;        // NodeArray
+    constexpr uint32_t kDefaultNodeArray = 0x5510C462; // Default_NodeArray
+    const char* home = std::getenv("HOME");
+    const std::string folder = std::string(std::getenv("XDG_CACHE_HOME") ? std::getenv("XDG_CACHE_HOME") : (std::string(home ? home : ".") + "/.cache")) + "/thug2-headless";
+    const std::string out = folder + "/Default.qb";
+    struct stat st {};
+    if (::stat(out.c_str(), &st) == 0) return out;
+    std::FILE* in = std::fopen(sky_qb.c_str(), "rb");
+    if (!in) return sky_qb;
+    std::vector<uint8_t> bytes;
+    for (int c; (c = std::fgetc(in)) != EOF;) bytes.push_back(static_cast<uint8_t>(c));
+    std::fclose(in);
+    // (the file starts with the global's name: a name token, 0x16, then its checksum)
+    uint32_t first = 0;
+    if (bytes.size() < 5 || bytes[0] != 0x16 || (std::memcpy(&first, &bytes[1], 4), first != kNodeArray)) return sky_qb;
+    std::memcpy(&bytes[1], &kDefaultNodeArray, 4);
+    std::filesystem::create_directories(folder);
+    std::FILE* write = std::fopen(out.c_str(), "wb");
+    if (!write) return sky_qb;
+    std::fwrite(bytes.data(), 1, bytes.size(), write);
+    std::fclose(write);
+    return out;
+}
+
+// The developer-only Default level ships without a scene or nodes (only its scripts and sky): its scene, texture
+// dictionary and collision are answered with the sky's own (a few kilobytes), and its node file with the sky's renamed
+// (default_nodes_from), so the level loads as a near-empty one the host's world is put into - in place of a stock
+// level's megabytes. Only where the game folder has no file of its own.
+std::string with_stand_ins(std::string path)
+{
+    struct stat st {};
+    if (::stat(path.c_str(), &st) == 0) return path;
+    std::string lower = path;
+    for (char& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    for (const char* kind : {".scn.xbx", ".tex.xbx", ".col.xbx", ".qb"}) {
+        const std::string want = std::string("levels/default/default") + kind;
+        if (lower.size() >= want.size() && lower.compare(lower.size() - want.size(), want.size(), want) == 0) {
+            const std::string folder = path.substr(0, path.size() - want.size());
+            const std::string sky = resolve((folder + "levels/default_sky/default_Sky" + kind).c_str());
+            return std::string(kind) == ".qb" ? default_nodes_from(sky) : sky;
+        }
+    }
+    return path;
+}
+
 // Seconds since 1970 as the system's file time (100 ns ticks since 1601).
 std::uint64_t ticks(std::time_t seconds) { return (static_cast<std::uint64_t>(seconds) + 11644473600ULL) * 10000000ULL; }
 
 thread_local std::uint32_t error_code = 0;
+
+// THUG2_TRACE_FILES=1: every file opened, as found on disk, to stderr (what a run needs of the game's data).
+void trace(const std::string& real)
+{
+    static const bool on = std::getenv("THUG2_TRACE_FILES") != nullptr;
+    if (on) std::fprintf(stderr, "OPEN %s\n", real.c_str());
+}
+
+// A handle that is no open file (a failed open's, or null): Win32's calls fail on those, they don't crash.
+bool bad(DiskFile* file) { return file == nullptr || file == fs::no_file(); }
 
 class PosixDisk final : public fs::Disk {
 public:
@@ -147,13 +213,14 @@ public:
             flags |= O_CREAT;
             break;
         }
-        const std::string real = resolve(path);
+        const std::string real = with_stand_ins(resolve(path));
         const int fd = ::open(real.c_str(), flags, 0644);
         if (fd < 0) {
             error_code = errno == ENOENT ? ERROR_FILE_NOT_FOUND : 5;
             return fs::no_file();
         }
         if ((flags & O_CREAT) != 0) forget_folder_of(real);
+        trace(real);
         return new DiskFile{fd};
     }
     bool close(DiskFile* file) override
@@ -165,6 +232,7 @@ public:
     }
     bool read(DiskFile* file, void* buffer, uint32_t length, uint32_t* bytes, void* overlapped) override
     {
+        if (bad(file)) return false;
         auto* block = static_cast<OVERLAPPED*>(overlapped);
         const ssize_t n = block ? ::pread(file->fd, buffer, length, block->Offset) : ::read(file->fd, buffer, length);
         if (n < 0) {
@@ -181,30 +249,34 @@ public:
     }
     bool write(DiskFile* file, const void* data, uint32_t length, uint32_t* written) override
     {
+        if (bad(file)) return false;
         const ssize_t n = ::write(file->fd, data, length);
         if (written) *written = n < 0 ? 0 : static_cast<uint32_t>(n);
         return n >= 0;
     }
     uint32_t seek(DiskFile* file, int32_t offset, Origin origin) override
     {
+        if (bad(file)) return 0xFFFFFFFFu;
         const int whence = origin == Origin::kBegin ? SEEK_SET : origin == Origin::kCurrent ? SEEK_CUR : SEEK_END;
         const off_t at = ::lseek(file->fd, offset, whence);
         return at < 0 ? 0xFFFFFFFFu : static_cast<uint32_t>(at);
     }
-    bool seek_to(DiskFile* file, uint64_t offset) override { return ::lseek(file->fd, static_cast<off_t>(offset), SEEK_SET) >= 0; }
+    bool seek_to(DiskFile* file, uint64_t offset) override { return !bad(file) && ::lseek(file->fd, static_cast<off_t>(offset), SEEK_SET) >= 0; }
     uint32_t size(DiskFile* file) override
     {
+        if (bad(file)) return 0xFFFFFFFFu;
         struct stat st {};
         return ::fstat(file->fd, &st) == 0 ? static_cast<uint32_t>(st.st_size) : 0xFFFFFFFFu;
     }
     bool size64(DiskFile* file, uint64_t* size) override
     {
+        if (bad(file)) return false;
         struct stat st {};
         const bool known = ::fstat(file->fd, &st) == 0;
         *size = known ? static_cast<uint64_t>(st.st_size) : 0;
         return known;
     }
-    bool flush(DiskFile* file) override { return ::fsync(file->fd) == 0; }
+    bool flush(DiskFile* file) override { return !bad(file) && ::fsync(file->fd) == 0; }
     bool overlapped_result(DiskFile*, void* overlapped, uint32_t* bytes, bool) override
     {
         *bytes = static_cast<uint32_t>(static_cast<OVERLAPPED*>(overlapped)->InternalHigh);
@@ -214,10 +286,11 @@ public:
 
     DiskStream* open_stream(const char* path, const char* mode, fs::StreamSharing) override
     {
-        const std::string real = resolve(path);
+        const std::string real = with_stand_ins(resolve(path));
         std::FILE* file = std::fopen(real.c_str(), mode);
         if (!file) return nullptr;
         if (mode && (mode[0] == 'w' || mode[0] == 'a')) forget_folder_of(real);
+        trace(real);
         return new DiskStream{file};
     }
     size_t stream_read(DiskStream* stream, void* buffer, size_t size, size_t count) override { return std::fread(buffer, size, count, stream->file); }
@@ -235,13 +308,13 @@ public:
     fs::PathKind kind(const char* path) override
     {
         struct stat st {};
-        if (::stat(resolve(path).c_str(), &st) != 0) return fs::PathKind::kNone;
+        if (::stat(with_stand_ins(resolve(path)).c_str(), &st) != 0) return fs::PathKind::kNone;
         return S_ISDIR(st.st_mode) ? fs::PathKind::kFolder : fs::PathKind::kFile;
     }
     bool stat(const char* path, fs::FileStat* out) override
     {
         struct stat st {};
-        if (::stat(resolve(path).c_str(), &st) != 0) return false;
+        if (::stat(with_stand_ins(resolve(path)).c_str(), &st) != 0) return false;
         out->folder = S_ISDIR(st.st_mode);
         out->size = static_cast<uint64_t>(st.st_size);
         out->write_time = ticks(st.st_mtime);

@@ -171,6 +171,8 @@ Turns& turns()
 // runs that loop flat out (no 60 Hz wait: the host keeps the time) and draws nothing (the host draws).
 class Lockstep final : public ext::Extension {
 public:
+    // (no intro movies, and no start-up pause on a loading screen nobody sees)
+    bool skips_intro_movies() override { return true; }
     bool loop_pace(ext::LoopPace* pace) override
     {
         Turns& t = turns();

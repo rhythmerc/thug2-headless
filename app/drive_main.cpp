@@ -164,6 +164,7 @@ int main(int argc, char** argv)
         ++stepped;
         total_ms += ms;
         if (ms > worst_ms) worst_ms = ms;
+        if (ms > 20.0) std::printf("DRIVE frame %u took %.0f ms\n", frame, ms);
         static const uint32_t every = std::getenv("THUG2_EVERY") ? static_cast<uint32_t>(std::strtoul(std::getenv("THUG2_EVERY"), nullptr, 10)) : 30;
         if (frame % every == 0) {
             if (skater.present) {
