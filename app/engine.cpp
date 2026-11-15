@@ -22,6 +22,7 @@
 #include "app/startup.h"
 #include "app/probe.h"
 #include "app/thug2_engine.h"
+#include "engine/gfx/engine.h"
 #include "engine/gfx/engine_scene.h"
 #include "engine/gfx/engine_scene_list.h"
 #include "engine/memory/mem.h"
@@ -79,7 +80,14 @@ struct Turns {
     std::vector<headless::CollisionTriangle> world;
     float spawn[3] = {};
     float heading = 0.0F;
+    bool has_spawn = false;
     bool world_pending = false;
+    // A teleport the host asked for, waiting likewise.
+    float teleport[3] = {};
+    float teleport_heading = 0.0F;
+    bool teleport_pending = false;
+    // The host world's scene, once added (unloaded when another world replaces it).
+    render::WorldScene* scene = nullptr;
     // The host's rails (each a run of points), waiting likewise.
     std::vector<std::vector<std::array<float, 3>>> rails;
     bool rails_pending = false;
@@ -148,16 +156,37 @@ void apply_world(Turns& t)
         get_log("thug2: the host world's collision doesn't check out (%zu bytes) - not added", file.size());
         return;
     }
+    // (the last world's scene let go of - its collision with it - before the new one is made)
+    if (t.scene) {
+        render::engine::unload_scene(t.scene, 1);
+        t.scene = nullptr;
+    }
     // (the game keeps reading the collision from these bytes: the scene's for its life)
     auto* data = static_cast<uint8_t*>(memory::alloc(static_cast<unsigned>(file.size())));
     std::memcpy(data, file.data(), file.size());
-    render::WorldScene* scene = render::build_world_scene("HostWorld", nullptr, false);
-    scene->set_builds_collision_grid(true);
-    scene->add_collision_data(data, file.size(), 0);
+    t.scene = render::build_world_scene("HostWorld", nullptr, false);
+    t.scene->set_builds_collision_grid(true);
+    t.scene->add_collision_data(data, file.size(), 0);
     get_log("thug2: host world added: %zu triangles, %zu bytes of collision", t.world.size(), file.size());
+    // (always put back on the board: nothing the skater held onto in the last world's collision is kept)
     frontend::test_view::Vec3 at{};
-    const std::string failed = frontend::test_view::jump_to({.x = t.spawn[0], .y = t.spawn[1], .z = t.spawn[2]}, true, t.heading, &at, true);
+    std::string failed;
+    if (t.has_spawn) {
+        failed = frontend::test_view::jump_to({.x = t.spawn[0], .y = t.spawn[1], .z = t.spawn[2]}, true, t.heading, &at, true);
+    } else if (auto* skater = static_cast<objects::GameEntity*>(objects::find_object(kSkater))) {
+        const maths::Vec4& p = skater->at_point();
+        failed = frontend::test_view::jump_to({.x = p.x, .y = p.y + 12.0F, .z = p.z}, false, 0.0F, &at, true);
+    }
     get_log("thug2: skater %s", failed.empty() ? "put on the host world" : failed.c_str());
+}
+
+void apply_teleport(Turns& t)
+{
+    if (objects::find_object(kSkater) == nullptr) return;
+    t.teleport_pending = false;
+    frontend::test_view::Vec3 at{};
+    const std::string failed = frontend::test_view::jump_to({.x = t.teleport[0], .y = t.teleport[1], .z = t.teleport[2]}, true, t.teleport_heading, &at, true);
+    if (!failed.empty()) get_log("thug2: teleport: %s", failed.c_str());
 }
 
 // (never destroyed: the game's thread may still be waiting on it when its host exits)
@@ -185,6 +214,7 @@ public:
         ++t.frames;
         if (t.world_pending) apply_world(t);
         if (t.rails_pending && !t.world_pending) apply_rails(t);
+        if (t.teleport_pending && !t.world_pending) apply_teleport(t);
         pace->flat_out = true;
         pace->skip_draw = true;
         return true;
@@ -313,11 +343,25 @@ extern "C" int thug2_set_world(const Thug2Triangle* triangles, uint32_t count, c
         tri.terrain = triangles[i].terrain;
         t.world.push_back(tri);
     }
-    std::memcpy(t.spawn, spawn, sizeof(t.spawn));
+    t.has_spawn = spawn != nullptr;
+    if (spawn) std::memcpy(t.spawn, spawn, sizeof(t.spawn));
     t.heading = heading_degrees;
     t.world_pending = true;
     return 0;
 }
+
+extern "C" int thug2_teleport(const float spawn[3], float heading_degrees)
+{
+    if (!spawn) return 1;
+    Turns& t = turns();
+    std::lock_guard<std::mutex> lock(t.mutex);
+    std::memcpy(t.teleport, spawn, sizeof(t.teleport));
+    t.teleport_heading = heading_degrees;
+    t.teleport_pending = true;
+    return 0;
+}
+
+extern "C" void thug2_set_cache_dir(const char* folder) { headless::set_cache_folder(folder); }
 
 extern "C" int thug2_set_rails(const float (*points)[3], const uint32_t* counts, uint32_t rail_count)
 {

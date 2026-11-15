@@ -153,6 +153,12 @@ int main(int argc, char** argv)
             thug2_set_rails(rail, counts, 1);
             std::printf("DRIVE frame %u: the test world (%zu triangles) given\n", frame, world.size());
         }
+        // THUG2_REBUILD=<frame>: the same world given again then, with no spawn (the skater kept where it is).
+        static const uint32_t rebuild = std::getenv("THUG2_REBUILD") ? static_cast<uint32_t>(std::strtoul(std::getenv("THUG2_REBUILD"), nullptr, 10)) : 0;
+        if (test && rebuild && frame == rebuild) {
+            thug2_set_world(world.data(), static_cast<uint32_t>(world.size()), nullptr, 0.0F);
+            std::printf("DRIVE frame %u: the test world given again (no spawn)\n", frame);
+        }
         const Thug2Pad pad = pad_at(script, frame);
         Thug2Skater skater{};
         const auto start = clock::now();
@@ -168,9 +174,10 @@ int main(int argc, char** argv)
         static const uint32_t every = std::getenv("THUG2_EVERY") ? static_cast<uint32_t>(std::strtoul(std::getenv("THUG2_EVERY"), nullptr, 10)) : 30;
         if (frame % every == 0) {
             if (skater.present) {
-                std::printf("DRIVE frame %u: at (%.1f, %.1f, %.1f) vel (%.1f, %.1f, %.1f) %s  [%.2f ms]\n", frame,
+                std::printf("DRIVE frame %u: at (%.1f, %.1f, %.1f) vel (%.1f, %.1f, %.1f) fwd (%.2f, %.2f, %.2f) %s  [%.2f ms]\n", frame,
                             skater.position[0], skater.position[1], skater.position[2], skater.velocity[0],
-                            skater.velocity[1], skater.velocity[2], state_name(skater.state), ms);
+                            skater.velocity[1], skater.velocity[2], skater.forward[0], skater.forward[1],
+                            skater.forward[2], state_name(skater.state), ms);
             } else {
                 std::printf("DRIVE frame %u: no skater yet  [%.2f ms]\n", frame, ms);
             }

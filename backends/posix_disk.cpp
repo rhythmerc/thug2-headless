@@ -127,6 +127,13 @@ std::string resolve(const char* path)
     return out;
 }
 
+// The folder the harness keeps its own files in (thug2_set_cache_dir; empty: $XDG_CACHE_HOME or ~/.cache).
+std::string& cache_folder()
+{
+    static std::string folder;
+    return folder;
+}
+
 // The developer-only Default level ships without a scene or nodes (only its scripts and sky): its scene, texture
 // dictionary and node file (levels\Default\Default.qb: the NodeArray) are answered with the sky's own - a scene of a
 // few kilobytes and its one geometry node - so the level loads as a near-empty one the host's world is put into (in
@@ -138,7 +145,8 @@ std::string default_nodes_from(const std::string& sky_qb)
     constexpr uint32_t kNodeArray = 0xC472ECC5;        // NodeArray
     constexpr uint32_t kDefaultNodeArray = 0x5510C462; // Default_NodeArray
     const char* home = std::getenv("HOME");
-    const std::string folder = std::string(std::getenv("XDG_CACHE_HOME") ? std::getenv("XDG_CACHE_HOME") : (std::string(home ? home : ".") + "/.cache")) + "/thug2-headless";
+    const std::string folder = !cache_folder().empty() ? cache_folder()
+        : std::string(std::getenv("XDG_CACHE_HOME") ? std::getenv("XDG_CACHE_HOME") : (std::string(home ? home : ".") + "/.cache")) + "/thug2-headless";
     const std::string out = folder + "/Default.qb";
     struct stat st {};
     if (::stat(out.c_str(), &st) == 0) return out;
@@ -394,6 +402,8 @@ public:
 };
 
 } // namespace
+
+void set_cache_folder(const char* folder) { cache_folder() = folder ? folder : ""; }
 
 fs::Disk& posix_disk()
 {

@@ -30,13 +30,15 @@ typedef struct Thug2Pad {
 } Thug2Pad;
 
 /* The local skater after a frame. state: 0 ground, 1 air, 2 wall, 3 lip, 4 rail, 5 wallplant, -1 unknown. Game units
- * (inches), world space. */
+ * (inches), world space. forward / up: its orientation (unit rows of its basis frame: where it faces, its up). */
 typedef struct Thug2Skater {
     int present;
     float position[3];
     float velocity[3];
     int state;
     uint32_t frame;
+    float forward[3];
+    float up[3];
 } Thug2Skater;
 
 /* A triangle of the host's world, game units, with its face flags (THUG2's collision flags). Its front - the side
@@ -59,10 +61,17 @@ int thug2_boot(const char* game_dir, int argc, const char* const* argv);
 /* One frame with `pad` (null: at rest); `skater` (may be null) as the frame left it. Returns 0, or non-zero once the
  * game has ended. */
 int thug2_step(const Thug2Pad* pad, Thug2Skater* skater);
-/* The host's world as collision the game skates (a scene of its own, added beside the level's), and the skater put
- * on its board at `spawn` facing `heading_degrees` (0: +z). Taken at the start of the next step, once the skater is
- * in the level. Returns 0 if the triangles were taken (it copies them). */
+/* The host's world as collision the game skates (a scene of its own, added beside the level's; a world given again
+ * replaces the last one), and the skater put on its board at `spawn` facing `heading_degrees` (0: +z, 90: +x) - or,
+ * with `spawn` null, put back on its board where it is, facing the way it faces (still: its momentum is lost). Taken
+ * at the start of the next step, once the skater is in the level. Returns 0 if the triangles were taken (it copies
+ * them). */
 int thug2_set_world(const Thug2Triangle* triangles, uint32_t count, const float spawn[3], float heading_degrees);
+/* The skater put on its board at `spawn` (on the ground below it) facing `heading_degrees` (0: +z, 90: +x), still.
+ * Taken at the start of the next step (after a world given with it). Returns 0. */
+int thug2_teleport(const float spawn[3], float heading_degrees);
+/* Where the game keeps files it makes (call before thug2_boot; null: $XDG_CACHE_HOME/thug2-headless). */
+void thug2_set_cache_dir(const char* folder);
 /* The host's rails, in place of the level's: `rail_count` polylines, rail i being counts[i] points (x, y, z, game
  * units) taken in turn from `points`. Grinding works on them as on a level's rails; they run no level scripts.
  * Taken with the world (at the start of the next step once the skater is in the level). Returns 0 if taken. */

@@ -12,6 +12,8 @@ namespace input { class Source; }
 namespace headless {
 
 fs::Disk& posix_disk();
+// Where the disk keeps the files it makes (Default's node file); null or "": $XDG_CACHE_HOME/thug2-headless.
+void set_cache_folder(const char* folder);
 render::Gpu& headless_gpu();
 render::GpuContext& headless_gpu_context();
 render::UiBackend& headless_ui_backend();

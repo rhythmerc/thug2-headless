@@ -29,6 +29,13 @@ void read_skater(Thug2Skater* out)
     out->velocity[0] = vel.x;
     out->velocity[1] = vel.y;
     out->velocity[2] = vel.z;
+    const maths::Mat4& frame = skater->basis_frame();
+    out->forward[0] = frame.row[2].x;
+    out->forward[1] = frame.row[2].y;
+    out->forward[2] = frame.row[2].z;
+    out->up[0] = frame.row[1].x;
+    out->up[1] = frame.row[1].y;
+    out->up[2] = frame.row[1].z;
     if (auto* control = static_cast<objects::RiderBoardPhysics*>(skater->fetch_module(kSkaterPhysicsControl))) {
         if (objects::RiderPoseState* pose = control->pose()) out->state = pose->cur_phase();
     }
