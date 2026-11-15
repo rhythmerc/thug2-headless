@@ -2,6 +2,8 @@
 // in their headless Linux forms.
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <string>
 
 namespace fs { class Disk; }
@@ -11,7 +13,18 @@ namespace media { class Movie; }
 namespace net { class Transport; }
 namespace input { class Source; }
 
+namespace render { struct GpuTexture; }
+
 namespace headless {
+
+// A texture's level as the in-memory GPU holds it (format: Direct3D 9's number, or a DXTn fourcc).
+struct TextureLevel {
+    uint32_t width, height, format, pitch;
+    const uint8_t* bits;
+    size_t bytes;
+    uint32_t levels;
+};
+bool texture_level(render::GpuTexture* texture, uint32_t level, TextureLevel* out);
 
 fs::Disk& posix_disk();
 // Where the disk keeps the files it makes (Default's node file); null or "": $XDG_CACHE_HOME/thug2-headless.

@@ -6,7 +6,9 @@
 // left / right (the left stick, full over), rup / rdown / rleft / rright (the right stick), cross, circle, square,
 // triangle, l1, r1, l2, r2.
 #include "app/thug2_engine.h"
+#include "stb_image_write.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -116,6 +118,105 @@ std::vector<Thug2Triangle> test_world()
     return out;
 }
 
+// THUG2_SHOT=<file.png> (at THUG2_SHOT_FRAME, default 200): the skater as the host would draw it - every mesh
+// skinned with the frame's palette and placed by the draw matrix - rasterised, front and side by side (flat shaded
+// by its normals, a z-buffer each; no textures), and its meshes, textures and bones listed.
+void shoot(const char* file)
+{
+    const uint32_t mesh_count = thug2_skater_meshes(nullptr, 0);
+    std::vector<Thug2Mesh> meshes(mesh_count);
+    thug2_skater_meshes(meshes.data(), mesh_count);
+    std::vector<std::array<float, 16>> palette(64);
+    float draw[16];
+    const uint32_t bones = thug2_skater_pose(reinterpret_cast<float(*)[16]>(palette.data()), 64, draw);
+    std::printf("SHOT %u meshes, %u bones\n", mesh_count, bones);
+    // Row vectors: p' = p M.
+    auto apply = [](const float* m, const float* p, float w) {
+        std::array<float, 3> o{};
+        for (int c = 0; c < 3; ++c) o[c] = p[0] * m[c] + p[1] * m[4 + c] + p[2] * m[8 + c] + w * m[12 + c];
+        return o;
+    };
+    struct Tri { std::array<std::array<float, 3>, 3> p; std::array<float, 3> n; };
+    std::vector<Tri> tris;
+    std::array<float, 3> lo{1e30F, 1e30F, 1e30F}, hi{-1e30F, -1e30F, -1e30F};
+    for (uint32_t m = 0; m < mesh_count; ++m) {
+        std::vector<Thug2Vertex> v(meshes[m].vertex_count);
+        std::vector<uint16_t> idx(meshes[m].index_count);
+        thug2_skater_mesh_data(m, v.data(), idx.data());
+        Thug2Texture tex{};
+        if (meshes[m].texture >= 0) thug2_skater_texture(static_cast<uint32_t>(meshes[m].texture), &tex, nullptr, 0);
+        std::printf("SHOT mesh %u: %u vertices, %u indices, texture %d (%ux%u format %u), two-sided %u, alpha ref %u, blended %u\n",
+                    m, meshes[m].vertex_count, meshes[m].index_count, meshes[m].texture, tex.width, tex.height,
+                    tex.format, meshes[m].two_sided, meshes[m].alpha_ref, meshes[m].blended);
+        std::vector<std::array<float, 3>> posed(v.size());
+        for (size_t i = 0; i < v.size(); ++i) {
+            std::array<float, 3> sum{};
+            for (int k = 0; k < 3; ++k) {
+                if (v[i].weights[k] == 0.0F || v[i].bones[k] >= bones) continue;
+                const auto q = apply(palette[v[i].bones[k]].data(), v[i].position, 1.0F);
+                for (int c = 0; c < 3; ++c) sum[c] += q[c] * v[i].weights[k];
+            }
+            posed[i] = apply(draw, sum.data(), 1.0F);
+            for (int c = 0; c < 3; ++c) {
+                lo[c] = std::min(lo[c], posed[i][c]);
+                hi[c] = std::max(hi[c], posed[i][c]);
+            }
+        }
+        for (size_t i = 0; i + 2 < idx.size(); i += 3) {
+            Tri t{{posed[idx[i]], posed[idx[i + 1]], posed[idx[i + 2]]}, {}};
+            const float ax = t.p[1][0] - t.p[0][0], ay = t.p[1][1] - t.p[0][1], az = t.p[1][2] - t.p[0][2];
+            const float bx = t.p[2][0] - t.p[0][0], by = t.p[2][1] - t.p[0][1], bz = t.p[2][2] - t.p[0][2];
+            t.n = {ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx};
+            const float l = std::sqrt(t.n[0] * t.n[0] + t.n[1] * t.n[1] + t.n[2] * t.n[2]);
+            if (l > 0) for (float& c : t.n) c /= l;
+            tris.push_back(t);
+        }
+    }
+    std::printf("SHOT bounds (%.1f %.1f %.1f) - (%.1f %.1f %.1f), %zu triangles\n", lo[0], lo[1], lo[2], hi[0], hi[1], hi[2], tris.size());
+    const int size = 400;
+    std::vector<uint8_t> image(static_cast<size_t>(size) * 2 * size * 3, 40);
+    const float span = std::max({hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]}) * 1.1F;
+    for (int view = 0; view < 2; ++view) {
+        std::vector<float> depth(static_cast<size_t>(size) * size, -1e30F);
+        const int across = view == 0 ? 0 : 2; // front: x across, z depth; side: z across, x depth
+        const int deep = view == 0 ? 2 : 0;
+        for (const Tri& t : tris) {
+            std::array<float, 3> sx{}, sy{}, sz{};
+            for (int k = 0; k < 3; ++k) {
+                sx[k] = (t.p[k][across] - (lo[across] + hi[across]) / 2) / span * size + size / 2.0F;
+                sy[k] = size - ((t.p[k][1] - lo[1]) / span * size + size * 0.05F);
+                sz[k] = t.p[k][deep];
+            }
+            const float shade = 0.25F + 0.75F * std::fabs(t.n[deep] * 0.6F + t.n[1] * 0.4F + t.n[across] * 0.2F);
+            const int x0 = std::max(0, static_cast<int>(std::min({sx[0], sx[1], sx[2]})));
+            const int x1 = std::min(size - 1, static_cast<int>(std::max({sx[0], sx[1], sx[2]})));
+            const int y0 = std::max(0, static_cast<int>(std::min({sy[0], sy[1], sy[2]})));
+            const int y1 = std::min(size - 1, static_cast<int>(std::max({sy[0], sy[1], sy[2]})));
+            const float area = (sx[1] - sx[0]) * (sy[2] - sy[0]) - (sx[2] - sx[0]) * (sy[1] - sy[0]);
+            if (std::fabs(area) < 1e-6F) continue;
+            for (int y = y0; y <= y1; ++y) {
+                for (int x = x0; x <= x1; ++x) {
+                    const float px = x + 0.5F, py = y + 0.5F;
+                    const float w0 = ((sx[1] - px) * (sy[2] - py) - (sx[2] - px) * (sy[1] - py)) / area;
+                    const float w1 = ((sx[2] - px) * (sy[0] - py) - (sx[0] - px) * (sy[2] - py)) / area;
+                    const float w2 = 1 - w0 - w1;
+                    if (w0 < 0 || w1 < 0 || w2 < 0) continue;
+                    const float z = w0 * sz[0] + w1 * sz[1] + w2 * sz[2];
+                    float& d = depth[static_cast<size_t>(y) * size + x];
+                    if (z <= d) continue;
+                    d = z;
+                    uint8_t* px_out = &image[(static_cast<size_t>(y) * size * 2 + view * size + x) * 3];
+                    px_out[0] = static_cast<uint8_t>(230 * shade);
+                    px_out[1] = static_cast<uint8_t>(150 * shade);
+                    px_out[2] = static_cast<uint8_t>(90 * shade);
+                }
+            }
+        }
+    }
+    stbi_write_png(file, size * 2, size, 3, image.data(), size * 2 * 3);
+    std::printf("SHOT written to %s\n", file);
+}
+
 const char* state_name(int state)
 {
     static const char* names[] = {"ground", "air", "wall", "lip", "rail", "wallplant"};
@@ -159,6 +260,8 @@ int main(int argc, char** argv)
             thug2_set_world(world.data(), static_cast<uint32_t>(world.size()), nullptr, 0.0F);
             std::printf("DRIVE frame %u: the test world given again (no spawn)\n", frame);
         }
+        static const uint32_t shot_frame = std::getenv("THUG2_SHOT_FRAME") ? static_cast<uint32_t>(std::strtoul(std::getenv("THUG2_SHOT_FRAME"), nullptr, 10)) : 200;
+        if (std::getenv("THUG2_SHOT") && frame == shot_frame + 1) shoot(std::getenv("THUG2_SHOT"));
         const Thug2Pad pad = pad_at(script, frame);
         Thug2Skater skater{};
         const auto start = clock::now();

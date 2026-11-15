@@ -325,6 +325,15 @@ private:
 
 } // namespace
 
+bool texture_level(render::GpuTexture* texture, uint32_t level, TextureLevel* out)
+{
+    auto* t = reinterpret_cast<Texture*>(texture);
+    if (!t || level >= t->levels.size() || !out) return false;
+    const Surface& s = *t->levels[level];
+    *out = {s.width, s.height, s.format, s.pitch, s.bits.data(), s.bits.size(), static_cast<uint32_t>(t->levels.size())};
+    return true;
+}
+
 render::Gpu& headless_gpu()
 {
     static HeadlessGpu gpu;

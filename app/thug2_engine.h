@@ -79,6 +79,53 @@ int thug2_set_rails(const float (*points)[3], const uint32_t* counts, uint32_t r
 /* Asks the game to end (its next frame quits the loop). */
 void thug2_quit(void);
 
+/* --- The skater's look: its skinned model and its pose, for a host that draws it. Read between steps. ---
+ *
+ * The model is the skater's meshes in its bind pose (game units, model space) with up to three bones a vertex. A
+ * vertex's place in a frame is sum(weight[i] * position * palette[bone[i]]) - row vectors, as the game skins: the
+ * palette is each bone's inverse bind times its posed matrix. The model is placed in the world by the draw matrix
+ * (row vectors too; the skater's regular / goofy mirroring is in it). */
+typedef struct Thug2Vertex {
+    float position[3];
+    float normal[3];
+    uint32_t color; /* BGRA bytes (0x80: unchanged) */
+    float uv[2];
+    uint8_t bones[4];
+    float weights[4];
+} Thug2Vertex;
+
+enum {
+    THUG2_TEXTURE_DXT1 = 1,
+    THUG2_TEXTURE_DXT5 = 5,
+    THUG2_TEXTURE_BGRA8 = 32,
+};
+typedef struct Thug2Mesh {
+    uint32_t vertex_count;
+    uint32_t index_count; /* a triangle list: three a triangle */
+    int32_t texture;      /* the texture (thug2_skater_texture's index) its first pass draws with; -1: none */
+    uint8_t two_sided;
+    uint8_t alpha_ref;    /* 0: no alpha test */
+    uint8_t blended;      /* drawn blended (its first pass isn't opaque) */
+    uint8_t pad;
+    float color[4];       /* its first pass's colour (0.5: unchanged) */
+} Thug2Mesh;
+typedef struct Thug2Texture {
+    uint32_t width, height;
+    uint32_t format; /* THUG2_TEXTURE_*; 0: one the host can't use */
+    uint32_t bytes;  /* the top level's */
+} Thug2Texture;
+
+/* The skater's meshes into `out` (at most `max`); the number there are (0: no skater, or its model isn't built). */
+uint32_t thug2_skater_meshes(Thug2Mesh* out, uint32_t max);
+/* Mesh `mesh`'s vertices and indices into arrays as long as its counts. 0, or non-zero if there's no such mesh. */
+int thug2_skater_mesh_data(uint32_t mesh, Thug2Vertex* vertices, uint16_t* indices);
+/* The textures the meshes use: texture `index`'s description, and (with `bits`, `size` its bytes) its top level. The
+ * number of textures. */
+uint32_t thug2_skater_texture(uint32_t index, Thug2Texture* out, void* bits, uint32_t size);
+/* The skater's pose: its palette (a 4x4 matrix a bone, row-major, at most `max`) and its draw matrix. The number of
+ * bones (0: no skater). */
+uint32_t thug2_skater_pose(float (*palette)[16], uint32_t max, float draw_matrix[16]);
+
 #ifdef __cplusplus
 }
 #endif

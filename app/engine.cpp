@@ -220,6 +220,7 @@ public:
         if (t.teleport_pending && !t.world_pending) apply_teleport(t);
         pace->flat_out = true;
         pace->skip_draw = true;
+        pace->pose_without_draw = true; // (the host draws the skater: thug2_skater_pose)
         return true;
     }
 };
