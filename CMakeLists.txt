@@ -8,11 +8,14 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(DEPS ${CMAKE_SOURCE_DIR}/deps)
 set(IMGUI ${DEPS}/imgui-1.91.9b-docking)
 
-file(STRINGS ${CMAKE_SOURCE_DIR}/build_sources.txt CORE_SOURCES)
+# The decomp's checkout (github.com/CanuckAussieKev/thug2-decomp, with the linux-headless patches).
+set(THUG2_DECOMP_DIR "$ENV{HOME}/projects/thug2-decomp" CACHE PATH "the thug2-decomp checkout")
+file(STRINGS ${CMAKE_SOURCE_DIR}/build_sources.txt CORE_SOURCES_RELATIVE)
+list(TRANSFORM CORE_SOURCES_RELATIVE PREPEND "${THUG2_DECOMP_DIR}/" OUTPUT_VARIABLE CORE_SOURCES)
 add_library(thug2_core STATIC ${CORE_SOURCES}
     ${IMGUI}/imgui.cpp ${IMGUI}/imgui_draw.cpp ${IMGUI}/imgui_tables.cpp ${IMGUI}/imgui_widgets.cpp)
 target_include_directories(thug2_core PUBLIC
-    $ENV{HOME}/projects/thug2-decomp/src ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/compat ${CMAKE_SOURCE_DIR}/compat/generated
+    ${THUG2_DECOMP_DIR}/src ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/compat ${CMAKE_SOURCE_DIR}/compat/generated
     ${CMAKE_SOURCE_DIR}/out/generated ${DEPS}/SDL3-3.2.30/include ${IMGUI}
     ${DEPS}/GSL-4.2.0/include ${DEPS}/lzham_codec-d379b1f9121e2197881c61cfc4713c78848bdfe7/include)
 target_compile_definitions(thug2_core PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS IMGUI_DISABLE_DEFAULT_FONT)
@@ -30,6 +33,9 @@ add_library(lzham STATIC ${LZHAM_DECOMP_SOURCES}
 target_include_directories(lzham PUBLIC ${LZHAM}/include PRIVATE ${LZHAM}/lzhamdecomp ${LZHAM}/lzhamcomp)
 target_compile_options(lzham PRIVATE -w "SHELL:-include stdint.h" "SHELL:-include limits.h")
 
+# Only the engine (and what it needs) when a host builds it: THUG2_DRIVE=OFF.
+option(THUG2_DRIVE "build thug2-drive" ON)
+
 # The engine a host links (app/thug2_engine.h): the core, the headless backends and the lockstep turns.
 add_library(thug2_engine STATIC app/engine.cpp app/probe.cpp world/col_writer.cpp compat/win_shim.cpp
     backends/posix_disk.cpp backends/headless_gpu.cpp backends/scripted_input.cpp
@@ -41,6 +47,8 @@ else()
 endif()
 
 # A host on the command line: boots, steps with a scripted pad, logs the skater (app/drive_main.cpp).
-add_executable(thug2-drive app/drive_main.cpp)
-target_include_directories(thug2-drive PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(thug2-drive PRIVATE thug2_engine)
+if(THUG2_DRIVE)
+    add_executable(thug2-drive app/drive_main.cpp)
+    target_include_directories(thug2-drive PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(thug2-drive PRIVATE thug2_engine)
+endif()
