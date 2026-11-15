@@ -30,7 +30,16 @@ typedef struct Thug2Pad {
 } Thug2Pad;
 
 /* The local skater after a frame. state: 0 ground, 1 air, 2 wall, 3 lip, 4 rail, 5 wallplant, -1 unknown. Game units
- * (inches), world space. forward / up: its orientation (unit rows of its basis frame: where it faces, its up). */
+ * (inches), world space. forward / up: its orientation (unit rows of its basis frame: where it faces, its up).
+ * balance_kind: the balance trick being balanced (its meter's): THUG2_BALANCE_*; balance: its lean as a share of the
+ * lean it bails at (-1 to 1), as the game's meter shows it: holding left moves it left (negative). */
+enum {
+    THUG2_BALANCE_NONE = 0,
+    THUG2_BALANCE_GRIND = 1, /* or a slide */
+    THUG2_BALANCE_MANUAL = 2, /* or a nose manual */
+    THUG2_BALANCE_LIP = 3,
+    THUG2_BALANCE_SKITCH = 4,
+};
 typedef struct Thug2Skater {
     int present;
     float position[3];
@@ -39,6 +48,8 @@ typedef struct Thug2Skater {
     uint32_t frame;
     float forward[3];
     float up[3];
+    int balance_kind;
+    float balance;
 } Thug2Skater;
 
 /* A triangle of the host's world, game units, with its face flags (THUG2's collision flags). Its front - the side

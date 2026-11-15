@@ -292,10 +292,10 @@ int main(int argc, char** argv)
         static const uint32_t every = std::getenv("THUG2_EVERY") ? static_cast<uint32_t>(std::strtoul(std::getenv("THUG2_EVERY"), nullptr, 10)) : 30;
         if (frame % every == 0) {
             if (skater.present) {
-                std::printf("DRIVE frame %u: at (%.1f, %.1f, %.1f) vel (%.1f, %.1f, %.1f) fwd (%.2f, %.2f, %.2f) %s  [%.2f ms]\n", frame,
+                std::printf("DRIVE frame %u: at (%.1f, %.1f, %.1f) vel (%.1f, %.1f, %.1f) fwd (%.2f, %.2f, %.2f) %s balance %d %.2f  [%.2f ms]\n", frame,
                             skater.position[0], skater.position[1], skater.position[2], skater.velocity[0],
                             skater.velocity[1], skater.velocity[2], skater.forward[0], skater.forward[1],
-                            skater.forward[2], state_name(skater.state), ms);
+                            skater.forward[2], state_name(skater.state), skater.balance_kind, skater.balance, ms);
             } else {
                 std::printf("DRIVE frame %u: no skater yet  [%.2f ms]\n", frame, ms);
             }
