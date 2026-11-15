@@ -50,6 +50,7 @@
 #include "engine/media/movie.h"
 #include "engine/net/transport.h"
 #include "engine/pad_input/input_source.h"
+#include "engine/pad_input/sdl_input.h"
 #include "engine/script/host.h"
 #include "engine/sys/startup_init.h"
 #include "engine/sys/editor_mode.h"
@@ -269,6 +270,9 @@ int run_game(int argc, char** argv)
     // the sound output (none), then the game's main with the command line's words.
     // (no window to give it the focus: the game is active from the start, or its main loop idles)
     sys::set_app_active(true);
+    // (PS2 controls - as the game's own settings default them, read only by the SDL input this harness doesn't run:
+    // either shoulder trigger alone does what both together do on the PC pad - spine transfers, acid drops, hips)
+    sio::the_input_settings().ps2_controls_ = 1;
     sys::init_pc_setup();
     audio::set_sound_device(audio::device().open(nullptr));
     std::array<char*, 21> words{};

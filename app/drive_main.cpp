@@ -107,12 +107,27 @@ std::vector<Thug2Triangle> test_world()
         const double a0 = (M_PI / 2) * i / steps, a1 = (M_PI / 2) * (i + 1) / steps;
         const float z0 = qp_start + radius * static_cast<float>(std::sin(a0)), y0 = radius * static_cast<float>(1 - std::cos(a0));
         const float z1 = qp_start + radius * static_cast<float>(std::sin(a1)), y1 = radius * static_cast<float>(1 - std::cos(a1));
-        const uint16_t flags = THUG2_FACE_SKATABLE | (i >= steps * 2 / 3 ? THUG2_FACE_VERT : 0);
+        const uint16_t flags = THUG2_FACE_SKATABLE | (i >= (std::getenv("THUG2_SPINE") ? steps / 2 : steps * 2 / 3) ? THUG2_FACE_VERT : 0);
         quad({cx - half, y0, z0}, {cx - half, y1, z1}, {cx + half, y1, z1}, {cx + half, y0, z0}, flags);
     }
-    // The deck behind it.
     const float top_z = qp_start + radius;
-    quad({cx - half, radius, top_z}, {cx - half, radius, top_z + 60}, {cx + half, radius, top_z + 60}, {cx + half, radius, top_z}, THUG2_FACE_SKATABLE);
+    // THUG2_SPINE=1: a second quarter pipe back to back with it (a spine) in place of the deck - its curve coming down
+    // the far side, facing +z; both curves vert from 45 degrees up (as the game's spine transfer looks for).
+    static const bool spine = std::getenv("THUG2_SPINE") != nullptr;
+    if (spine) {
+        for (int i = 0; i < steps; ++i) {
+            const double a0 = (M_PI / 2) * i / steps, a1 = (M_PI / 2) * (i + 1) / steps;
+            const float z0 = top_z + radius * static_cast<float>(1 - std::sin(a0)), y0 = radius * static_cast<float>(1 - std::cos(a0));
+            const float z1 = top_z + radius * static_cast<float>(1 - std::sin(a1)), y1 = radius * static_cast<float>(1 - std::cos(a1));
+            const uint16_t flags = THUG2_FACE_SKATABLE | (i >= steps / 2 ? THUG2_FACE_VERT : 0);
+            // (wound to face +z and up: the far side)
+            quad({cx + half, y0, z0}, {cx + half, y1, z1}, {cx - half, y1, z1}, {cx - half, y0, z0}, flags);
+        }
+        quad({cx - half, 0, top_z + radius}, {cx - half, 0, top_z + radius + 300}, {cx + half, 0, top_z + radius + 300}, {cx + half, 0, top_z + radius}, THUG2_FACE_SKATABLE);
+    } else {
+        // The deck behind it.
+        quad({cx - half, radius, top_z}, {cx - half, radius, top_z + 60}, {cx + half, radius, top_z + 60}, {cx + half, radius, top_z}, THUG2_FACE_SKATABLE);
+    }
     // A wallride wall along -x, facing +x.
     quad({cx - half, 0, cz - half}, {cx - half, 120, cz - half}, {cx - half, 120, qp_start}, {cx - half, 0, qp_start}, THUG2_FACE_WALL | THUG2_FACE_SKATABLE);
     return out;
