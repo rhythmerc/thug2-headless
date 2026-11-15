@@ -1,0 +1,331 @@
+// fs::Disk on POSIX: the game's files by path, as fs_win32/win32_disk.cpp gives them on Windows. Windows paths are
+// case-insensitive and use backslashes; the game's data is not consistent in either, so a path is resolved here part
+// by part against what is on disk, ignoring case (each folder's listing kept once read; dropped when this disk
+// changes that folder). An overlapped read completes at once at its offset (Win32 allows a read to complete at the
+// call): the result is there when read() returns.
+#include "backends/backends.h"
+
+#include "engine/file/disk.h"
+
+#include <windows.h>
+
+#include <cerrno>
+#include <cstdio>
+#include <ctime>
+#include <filesystem>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+#include <dirent.h>
+#include <fcntl.h>
+#include <fnmatch.h>
+#include <sys/stat.h>
+#include <sys/statvfs.h>
+#include <unistd.h>
+
+namespace fs {
+struct DiskFile {
+    int fd = -1;
+};
+struct DiskStream {
+    std::FILE* file = nullptr;
+};
+} // namespace fs
+
+namespace headless {
+namespace {
+
+using fs::Access;
+using fs::DiskFile;
+using fs::DiskStream;
+using fs::Disposition;
+using fs::Origin;
+
+std::mutex listing_mutex;
+std::unordered_map<std::string, std::vector<std::string>> listings;
+
+const std::vector<std::string>& listing(const std::string& folder)
+{
+    auto at = listings.find(folder);
+    if (at != listings.end()) {
+        return at->second;
+    }
+    std::vector<std::string> names;
+    if (DIR* dir = opendir(folder.empty() ? "." : folder.c_str())) {
+        while (dirent* entry = readdir(dir)) {
+            names.emplace_back(entry->d_name);
+        }
+        closedir(dir);
+    }
+    return listings.emplace(folder, std::move(names)).first->second;
+}
+
+void forget_folder_of(const std::string& path)
+{
+    std::lock_guard<std::mutex> guard(listing_mutex);
+    const auto slash = path.find_last_of('/');
+    listings.erase(slash == std::string::npos ? std::string() : path.substr(0, slash));
+}
+
+// `path` (Windows' or POSIX's spelling) as the file on disk: each part matched to an entry of its folder whatever
+// its case; a part with no match is kept as given (a file about to be made).
+std::string resolve(const char* path)
+{
+    std::string in = path ? path : "";
+    for (char& c : in) {
+        if (c == '\\') c = '/';
+    }
+    struct stat st {};
+    if (::stat(in.c_str(), &st) == 0) {
+        return in;
+    }
+    std::string out;
+    std::size_t at = 0;
+    if (!in.empty() && in[0] == '/') {
+        out = "/";
+        at = 1;
+    }
+    std::lock_guard<std::mutex> guard(listing_mutex);
+    bool matching = true;
+    while (at <= in.size()) {
+        std::size_t end = in.find('/', at);
+        if (end == std::string::npos) end = in.size();
+        std::string part = in.substr(at, end - at);
+        at = end + 1;
+        if (part.empty() || part == ".") {
+            continue;
+        }
+        const std::string folder = out.empty() || out == "/" ? out.substr(0, out.size() - (out == "/" ? 0 : 0)) : out;
+        std::string chosen = part;
+        if (matching && part != "..") {
+            bool found = false;
+            for (const std::string& name : listing(folder == "/" ? "/" : folder)) {
+                if (name == part) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                for (const std::string& name : listing(folder == "/" ? "/" : folder)) {
+                    if (strcasecmp(name.c_str(), part.c_str()) == 0) {
+                        chosen = name;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            matching = found;
+        }
+        if (!out.empty() && out != "/") out += '/';
+        out += chosen;
+    }
+    return out;
+}
+
+// Seconds since 1970 as the system's file time (100 ns ticks since 1601).
+std::uint64_t ticks(std::time_t seconds) { return (static_cast<std::uint64_t>(seconds) + 11644473600ULL) * 10000000ULL; }
+
+thread_local std::uint32_t error_code = 0;
+
+class PosixDisk final : public fs::Disk {
+public:
+    DiskFile* open(const char* path, fs::OpenSpec spec) override
+    {
+        int flags = spec.access == Access::kRead ? O_RDONLY : spec.access == Access::kWrite ? O_WRONLY : O_RDWR;
+        switch (spec.disposition) {
+        case Disposition::kOpenExisting:
+            break;
+        case Disposition::kCreateNew:
+            flags |= O_CREAT | O_EXCL;
+            break;
+        case Disposition::kCreateAlways:
+            flags |= O_CREAT | O_TRUNC;
+            break;
+        case Disposition::kOpenAlways:
+            flags |= O_CREAT;
+            break;
+        }
+        const std::string real = resolve(path);
+        const int fd = ::open(real.c_str(), flags, 0644);
+        if (fd < 0) {
+            error_code = errno == ENOENT ? ERROR_FILE_NOT_FOUND : 5;
+            return fs::no_file();
+        }
+        if ((flags & O_CREAT) != 0) forget_folder_of(real);
+        return new DiskFile{fd};
+    }
+    bool close(DiskFile* file) override
+    {
+        if (!file || file == fs::no_file()) return false;
+        const bool done = ::close(file->fd) == 0;
+        delete file;
+        return done;
+    }
+    bool read(DiskFile* file, void* buffer, uint32_t length, uint32_t* bytes, void* overlapped) override
+    {
+        auto* block = static_cast<OVERLAPPED*>(overlapped);
+        const ssize_t n = block ? ::pread(file->fd, buffer, length, block->Offset) : ::read(file->fd, buffer, length);
+        if (n < 0) {
+            error_code = 5;
+            return false;
+        }
+        if (bytes) *bytes = static_cast<uint32_t>(n);
+        if (block) {
+            block->Internal = 0;
+            block->InternalHigh = static_cast<ULONG_PTR>(n);
+            if (block->hEvent) SetEvent(block->hEvent);
+        }
+        return true;
+    }
+    bool write(DiskFile* file, const void* data, uint32_t length, uint32_t* written) override
+    {
+        const ssize_t n = ::write(file->fd, data, length);
+        if (written) *written = n < 0 ? 0 : static_cast<uint32_t>(n);
+        return n >= 0;
+    }
+    uint32_t seek(DiskFile* file, int32_t offset, Origin origin) override
+    {
+        const int whence = origin == Origin::kBegin ? SEEK_SET : origin == Origin::kCurrent ? SEEK_CUR : SEEK_END;
+        const off_t at = ::lseek(file->fd, offset, whence);
+        return at < 0 ? 0xFFFFFFFFu : static_cast<uint32_t>(at);
+    }
+    bool seek_to(DiskFile* file, uint64_t offset) override { return ::lseek(file->fd, static_cast<off_t>(offset), SEEK_SET) >= 0; }
+    uint32_t size(DiskFile* file) override
+    {
+        struct stat st {};
+        return ::fstat(file->fd, &st) == 0 ? static_cast<uint32_t>(st.st_size) : 0xFFFFFFFFu;
+    }
+    bool size64(DiskFile* file, uint64_t* size) override
+    {
+        struct stat st {};
+        const bool known = ::fstat(file->fd, &st) == 0;
+        *size = known ? static_cast<uint64_t>(st.st_size) : 0;
+        return known;
+    }
+    bool flush(DiskFile* file) override { return ::fsync(file->fd) == 0; }
+    bool overlapped_result(DiskFile*, void* overlapped, uint32_t* bytes, bool) override
+    {
+        *bytes = static_cast<uint32_t>(static_cast<OVERLAPPED*>(overlapped)->InternalHigh);
+        return true;
+    }
+    uint32_t last_error() override { return error_code; }
+
+    DiskStream* open_stream(const char* path, const char* mode, fs::StreamSharing) override
+    {
+        const std::string real = resolve(path);
+        std::FILE* file = std::fopen(real.c_str(), mode);
+        if (!file) return nullptr;
+        if (mode && (mode[0] == 'w' || mode[0] == 'a')) forget_folder_of(real);
+        return new DiskStream{file};
+    }
+    size_t stream_read(DiskStream* stream, void* buffer, size_t size, size_t count) override { return std::fread(buffer, size, count, stream->file); }
+    size_t stream_write(DiskStream* stream, const void* data, size_t size, size_t count) override { return std::fwrite(data, size, count, stream->file); }
+    int stream_seek(DiskStream* stream, long offset, int origin) override { return std::fseek(stream->file, offset, origin); }
+    long stream_tell(DiskStream* stream) override { return std::ftell(stream->file); }
+    int stream_flush(DiskStream* stream) override { return std::fflush(stream->file); }
+    int stream_close(DiskStream* stream) override
+    {
+        const int result = std::fclose(stream->file);
+        delete stream;
+        return result;
+    }
+
+    fs::PathKind kind(const char* path) override
+    {
+        struct stat st {};
+        if (::stat(resolve(path).c_str(), &st) != 0) return fs::PathKind::kNone;
+        return S_ISDIR(st.st_mode) ? fs::PathKind::kFolder : fs::PathKind::kFile;
+    }
+    bool stat(const char* path, fs::FileStat* out) override
+    {
+        struct stat st {};
+        if (::stat(resolve(path).c_str(), &st) != 0) return false;
+        out->folder = S_ISDIR(st.st_mode);
+        out->size = static_cast<uint64_t>(st.st_size);
+        out->write_time = ticks(st.st_mtime);
+        return true;
+    }
+    bool local_time(uint64_t write_time, fs::LocalTime* local) override
+    {
+        const std::time_t seconds = static_cast<std::time_t>(write_time / 10000000ULL - 11644473600ULL);
+        std::tm tm {};
+        if (!localtime_r(&seconds, &tm)) return false;
+        *local = {.year = static_cast<uint16_t>(tm.tm_year + 1900), .month = static_cast<uint16_t>(tm.tm_mon + 1),
+                  .day = static_cast<uint16_t>(tm.tm_mday), .hour = static_cast<uint16_t>(tm.tm_hour),
+                  .minute = static_cast<uint16_t>(tm.tm_min), .second = static_cast<uint16_t>(tm.tm_sec)};
+        return true;
+    }
+    bool make_folder(const char* path) override
+    {
+        const std::string real = resolve(path);
+        forget_folder_of(real);
+        return ::mkdir(real.c_str(), 0755) == 0;
+    }
+    bool make_folders(const char* path) override
+    {
+        const std::string real = resolve(path);
+        std::error_code error;
+        const bool made = std::filesystem::create_directories(real, error);
+        std::lock_guard<std::mutex> guard(listing_mutex);
+        listings.clear();
+        return made;
+    }
+    bool remove(const char* path) override
+    {
+        const std::string real = resolve(path);
+        forget_folder_of(real);
+        return ::unlink(real.c_str()) == 0;
+    }
+    bool replace(const char* from, const char* to, bool) override
+    {
+        const std::string a = resolve(from);
+        const std::string b = resolve(to);
+        forget_folder_of(a);
+        forget_folder_of(b);
+        return ::rename(a.c_str(), b.c_str()) == 0;
+    }
+    bool list(const char* pattern, fs::FoundVisitor& visitor) override
+    {
+        // The folder resolved; the last part a wildcard ("*.pre"), matched ignoring case as Windows does.
+        std::string in = pattern ? pattern : "";
+        for (char& c : in) {
+            if (c == '\\') c = '/';
+        }
+        const auto slash = in.find_last_of('/');
+        const std::string folder = slash == std::string::npos ? std::string() : resolve(in.substr(0, slash).c_str());
+        const std::string wild = slash == std::string::npos ? in : in.substr(slash + 1);
+        DIR* dir = opendir(folder.empty() ? "." : folder.c_str());
+        if (!dir) return false;
+        bool any = false;
+        while (dirent* entry = readdir(dir)) {
+            if (fnmatch(wild.c_str(), entry->d_name, FNM_CASEFOLD) != 0) continue;
+            const std::string full = folder.empty() ? entry->d_name : folder + "/" + entry->d_name;
+            struct stat st {};
+            ::stat(full.c_str(), &st);
+            any = true;
+            const fs::Found found{.name = entry->d_name, .folder = S_ISDIR(st.st_mode), .size_low = static_cast<uint32_t>(st.st_size), .write_time = ticks(st.st_mtime)};
+            if (!visitor.found(found)) break;
+        }
+        closedir(dir);
+        return any;
+    }
+    bool free_space(uint64_t* available) override
+    {
+        struct statvfs vfs {};
+        if (::statvfs(".", &vfs) != 0) return false;
+        *available = static_cast<uint64_t>(vfs.f_bavail) * vfs.f_frsize;
+        return true;
+    }
+};
+
+} // namespace
+
+fs::Disk& posix_disk()
+{
+    static PosixDisk disk;
+    return disk;
+}
+
+} // namespace headless

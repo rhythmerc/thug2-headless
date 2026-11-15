@@ -59,3 +59,29 @@ template <std::size_t N> int strncpy_s(char (&dest)[N], const char* src, std::si
 #define sprintf_s snprintf
 #define _snprintf snprintf
 #define _vsnprintf vsnprintf
+
+inline int _strupr_s(char* text, std::size_t /*size*/)
+{
+    for (char* c = text; *c; ++c) *c = static_cast<char>(std::toupper(static_cast<unsigned char>(*c)));
+    return 0;
+}
+inline int freopen_s(FILE** out, const char* name, const char* mode, FILE* stream)
+{
+    *out = std::freopen(name, mode, stream);
+    return *out ? 0 : 1;
+}
+#include <cstdlib>
+inline int mbstowcs_s(std::size_t* converted, wchar_t* dest, std::size_t size, const char* src, std::size_t count)
+{
+    std::size_t limit = (count == _TRUNCATE || count >= size) ? size - 1 : count;
+    std::size_t n = std::mbstowcs(dest, src, limit);
+    if (n == static_cast<std::size_t>(-1)) n = 0;
+    dest[n] = L'\0';
+    if (converted) *converted = n + 1;
+    return 0;
+}
+inline int fopen_s(FILE** out, const char* name, const char* mode)
+{
+    *out = std::fopen(name, mode);
+    return *out ? 0 : 1;
+}

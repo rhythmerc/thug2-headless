@@ -165,6 +165,12 @@ struct MEMORYSTATUS {
     SIZE_T dwAvailVirtual;
 };
 
+#define MEM_COMMIT 0x1000u
+#define MEM_RESERVE 0x2000u
+#define MEM_FREE 0x10000u
+#define MEM_IMAGE 0x1000000u
+#define MEM_MAPPED 0x40000u
+#define MEM_PRIVATE 0x20000u
 struct MEMORY_BASIC_INFORMATION {
     PVOID BaseAddress;
     PVOID AllocationBase;
@@ -184,7 +190,14 @@ struct MSG {
 };
 
 // Threads, waits and time.
-HANDLE CreateThread(void* attributes, SIZE_T stack, LPTHREAD_START_ROUTINE start, LPVOID parameter, DWORD flags, DWORD* id);
+HANDLE create_thread_with(unsigned long (*call)(void* start, LPVOID parameter), void* start, LPVOID parameter, DWORD flags, DWORD* id);
+// (any entry point: the decomp's are DWORD- or unsigned long-returning)
+template <class R>
+HANDLE CreateThread(void* /*attributes*/, SIZE_T /*stack*/, R (*start)(LPVOID), LPVOID parameter, DWORD flags, DWORD* id)
+{
+    return create_thread_with([](void* f, LPVOID p) -> unsigned long { return static_cast<unsigned long>(reinterpret_cast<R (*)(LPVOID)>(f)(p)); },
+                              reinterpret_cast<void*>(start), parameter, flags, id);
+}
 DWORD ResumeThread(HANDLE thread);
 BOOL SetThreadPriority(HANDLE thread, int priority);
 HANDLE GetCurrentThread();
@@ -224,6 +237,7 @@ BOOL GetVersionExA(OSVERSIONINFOA* info);
 void GlobalMemoryStatus(MEMORYSTATUS* status);
 SIZE_T VirtualQuery(LPCVOID address, MEMORY_BASIC_INFORMATION* info, SIZE_T length);
 DWORD GetEnvironmentVariableA(LPCSTR name, LPSTR buffer, DWORD size);
+inline BOOL AllocConsole() { return TRUE; }
 BOOL SystemParametersInfoA(UINT action, UINT param, PVOID value, UINT update);
 UINT MapVirtualKeyA(UINT code, UINT type);
 DWORD GetPrivateProfileStringA(LPCSTR section, LPCSTR key, LPCSTR fallback, LPSTR buffer, DWORD size, LPCSTR file);
@@ -237,6 +251,63 @@ LRESULT DispatchMessageA(const MSG* msg);
 #define PeekMessage PeekMessageA
 #define DispatchMessage DispatchMessageA
 #define PM_REMOVE 1u
+
+
+// COM results.
+#define S_OK 0L
+#define S_FALSE 1L
+#define E_FAIL (static_cast<HRESULT>(0x80004005L))
+#define E_OUTOFMEMORY (static_cast<HRESULT>(0x8007000EL))
+#define FAILED(hr) (static_cast<HRESULT>(hr) < 0)
+#define SUCCEEDED(hr) (static_cast<HRESULT>(hr) >= 0)
+
+#define LOWORD(l) (static_cast<WORD>(static_cast<DWORD_PTR>(l) & 0xFFFF))
+#define HIWORD(l) (static_cast<WORD>((static_cast<DWORD_PTR>(l) >> 16) & 0xFFFF))
+#define MAKEINTRESOURCEA(i) (reinterpret_cast<LPSTR>(static_cast<ULONG_PTR>(static_cast<WORD>(i))))
+#define ES_SYSTEM_REQUIRED 0x1u
+#define ES_DISPLAY_REQUIRED 0x2u
+#define ES_CONTINUOUS 0x80000000u
+DWORD SetThreadExecutionState(DWORD flags);
+
+// The command line (main's arguments, kept by the harness), libraries (none load) and INI sections.
+LPSTR GetCommandLineA();
+void set_command_line(int argc, char** argv);
+HMODULE LoadLibraryExA(LPCSTR name, HANDLE file, DWORD flags);
+HMODULE LoadLibraryA(LPCSTR name);
+inline HMODULE GetModuleHandleA(LPCSTR) { return nullptr; }
+void* GetProcAddress(HMODULE module, LPCSTR name);
+BOOL FreeLibrary(HMODULE module);
+UINT GetSystemDirectoryA(LPSTR buffer, UINT size);
+DWORD GetPrivateProfileSectionA(LPCSTR section, LPSTR buffer, DWORD size, LPCSTR file);
+DWORD GetModuleFileNameA(HMODULE module, LPSTR buffer, DWORD size);
+
+// Files (POSIX underneath).
+#define GENERIC_READ 0x80000000u
+#define GENERIC_WRITE 0x40000000u
+#define FILE_SHARE_READ 0x1u
+#define FILE_SHARE_WRITE 0x2u
+#define CREATE_ALWAYS 2u
+#define OPEN_EXISTING 3u
+#define OPEN_ALWAYS 4u
+#define FILE_ATTRIBUTE_NORMAL 0x80u
+#define FILE_ATTRIBUTE_DIRECTORY 0x10u
+#define FILE_FLAG_OVERLAPPED 0x40000000u
+#define FILE_FLAG_SEQUENTIAL_SCAN 0x08000000u
+#define FILE_BEGIN 0u
+#define FILE_CURRENT 1u
+#define FILE_END 2u
+#define INVALID_FILE_ATTRIBUTES 0xFFFFFFFFu
+#define INVALID_FILE_SIZE 0xFFFFFFFFu
+#define INVALID_SET_FILE_POINTER 0xFFFFFFFFu
+HANDLE CreateFileA(LPCSTR name, DWORD access, DWORD share, void* security, DWORD disposition, DWORD flags, HANDLE templ);
+BOOL ReadFile(HANDLE file, LPVOID buffer, DWORD bytes, LPDWORD read, LPOVERLAPPED overlapped);
+BOOL WriteFile(HANDLE file, LPCVOID buffer, DWORD bytes, LPDWORD written, LPOVERLAPPED overlapped);
+DWORD GetFileSize(HANDLE file, LPDWORD high);
+DWORD SetFilePointer(HANDLE file, LONG distance, LONG* high, DWORD method);
+BOOL GetOverlappedResult(HANDLE file, LPOVERLAPPED overlapped, LPDWORD bytes, BOOL wait);
+DWORD GetFileAttributesA(LPCSTR name);
+BOOL CreateDirectoryA(LPCSTR name, void* security);
+BOOL DeleteFileA(LPCSTR name);
 
 // The registry (nothing is ever there).
 LSTATUS RegOpenKeyExA(HKEY key, LPCSTR sub, DWORD options, REGSAM access, PHKEY result);
