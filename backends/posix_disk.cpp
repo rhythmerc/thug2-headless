@@ -72,6 +72,13 @@ void forget_folder_of(const std::string& path)
     listings.erase(slash == std::string::npos ? std::string() : path.substr(0, slash));
 }
 
+// The game's folder (thug2_boot's), which relative paths are in. Empty: the working folder.
+std::string& game_root()
+{
+    static std::string root;
+    return root;
+}
+
 // `path` (Windows' or POSIX's spelling) as the file on disk: each part matched to an entry of its folder whatever
 // its case; a part with no match is kept as given (a file about to be made).
 std::string resolve(const char* path)
@@ -79,6 +86,10 @@ std::string resolve(const char* path)
     std::string in = path ? path : "";
     for (char& c : in) {
         if (c == '\\') c = '/';
+    }
+    // (relative to the game folder - not the process's working folder, which belongs to the host)
+    if (!in.empty() && in[0] != '/' && !game_root().empty()) {
+        in = game_root() + "/" + in;
     }
     struct stat st {};
     if (::stat(in.c_str(), &st) == 0) {
@@ -377,7 +388,7 @@ public:
         const auto slash = in.find_last_of('/');
         const std::string folder = slash == std::string::npos ? std::string() : resolve(in.substr(0, slash).c_str());
         const std::string wild = slash == std::string::npos ? in : in.substr(slash + 1);
-        DIR* dir = opendir(folder.empty() ? "." : folder.c_str());
+        DIR* dir = opendir(folder.empty() ? (game_root().empty() ? "." : game_root().c_str()) : folder.c_str());
         if (!dir) return false;
         bool any = false;
         while (dirent* entry = readdir(dir)) {
@@ -395,7 +406,7 @@ public:
     bool free_space(uint64_t* available) override
     {
         struct statvfs vfs {};
-        if (::statvfs(".", &vfs) != 0) return false;
+        if (::statvfs(game_root().empty() ? "." : game_root().c_str(), &vfs) != 0) return false;
         *available = static_cast<uint64_t>(vfs.f_bavail) * vfs.f_frsize;
         return true;
     }
@@ -404,6 +415,8 @@ public:
 } // namespace
 
 void set_cache_folder(const char* folder) { cache_folder() = folder ? folder : ""; }
+const std::string& cache_folder_path() { return cache_folder(); }
+void set_game_folder(const char* folder) { game_root() = folder ? folder : ""; }
 
 fs::Disk& posix_disk()
 {

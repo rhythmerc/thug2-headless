@@ -15,6 +15,8 @@
 #include <thread>
 #include <vector>
 
+#include <climits>
+#include <cstdlib>
 #include <unistd.h>
 
 #include "app/command_table.h"
@@ -287,9 +289,14 @@ Thug2Pad current_pad()
 
 extern "C" int thug2_boot(const char* game_dir, int argc, const char* const* argv)
 {
-    if (game_dir && chdir(game_dir) != 0) {
-        std::fprintf(stderr, "thug2: can't go to %s\n", game_dir);
-        return 1;
+    if (game_dir) {
+        // (the game's files are found from its folder; the host's working folder isn't changed)
+        char real[PATH_MAX];
+        if (!realpath(game_dir, real)) {
+            std::fprintf(stderr, "thug2: no game folder %s\n", game_dir);
+            return 1;
+        }
+        headless::set_game_folder(real);
     }
     // (the game keeps pointers into its command line for its whole life)
     static std::vector<std::string> words;

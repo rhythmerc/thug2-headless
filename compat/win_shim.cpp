@@ -1,6 +1,7 @@
 // The Win32 calls of compat/windows.h on POSIX: real threads, locks, semaphores, events, timers and files; the
 // registry, INI files, libraries and windows answer "nothing there".
 #include <windows.h>
+#include "backends/backends.h"
 #include <mmsystem.h>
 
 #include <atomic>
@@ -399,6 +400,11 @@ UINT GetSystemDirectoryA(LPSTR buffer, UINT size)
 }
 DWORD GetModuleFileNameA(HMODULE, LPSTR buffer, DWORD size)
 {
+    // (the game keeps its log and settings beside its exe: in the harness's cache folder when a host set one)
+    if (!headless::cache_folder_path().empty() && size > 0) {
+        const int n = std::snprintf(buffer, size, "%s/thug2.exe", headless::cache_folder_path().c_str());
+        return n > 0 && static_cast<DWORD>(n) < size ? static_cast<DWORD>(n) : 0;
+    }
     const ssize_t n = readlink("/proc/self/exe", buffer, size ? size - 1 : 0);
     if (n <= 0) return 0;
     buffer[n] = '\0';
