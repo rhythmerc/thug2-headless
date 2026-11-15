@@ -6,7 +6,9 @@ Data/images/loadscrn_generic.img.xbx
 Data/images/loadscrn.img.xbx
 Data/levels/default/default_Scripts.qb
 Data/levels/default_sky/default_Sky.col.xbx
+Data/levels/default_sky/default_Sky.qb
 Data/levels/default_sky/default_Sky.scn.xbx
+Data/levels/default_sky/default_Sky.tex.xbx
 Data/models/Ped_Female/Ped_F_NO_Head01.cas.xbx
 Data/models/Ped_Female/Ped_F_NO_Head01.skin.xbx
 Data/models/Ped_Female/Ped_F_NO_Head01.tex.xbx
