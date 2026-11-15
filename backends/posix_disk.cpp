@@ -139,11 +139,7 @@ std::string resolve(const char* path)
 }
 
 // The folder the harness keeps its own files in (thug2_set_cache_dir; empty: $XDG_CACHE_HOME or ~/.cache).
-std::string& cache_folder()
-{
-    static std::string folder;
-    return folder;
-}
+const std::string& cache_folder() { return cache_folder_path(); }
 
 // The developer-only Default level ships without a scene or nodes (only its scripts and sky): its scene, texture
 // dictionary and node file (levels\Default\Default.qb: the NodeArray) are answered with the sky's own - a scene of a
@@ -414,8 +410,6 @@ public:
 
 } // namespace
 
-void set_cache_folder(const char* folder) { cache_folder() = folder ? folder : ""; }
-const std::string& cache_folder_path() { return cache_folder(); }
 void set_game_folder(const char* folder) { game_root() = folder ? folder : ""; }
 
 fs::Disk& posix_disk()

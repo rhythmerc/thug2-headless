@@ -2,6 +2,11 @@
 # Linux, with the harness's own backends: what the go/no-go spike for a THUG2 engine in skate3-quest-ar runs.
 cmake_minimum_required(VERSION 3.27)
 project(thug2_headless LANGUAGES C CXX)
+# (optimised by default: the decomp's core leaves calls into parts not built here - the profiler, the script debugger,
+# SDL's window - in code that only an optimised build drops as dead)
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "build type" FORCE)
+endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -19,7 +24,8 @@ macro(thug2_dep_sources name folder url hash)
         FetchContent_Declare(${name} URL ${url} URL_HASH SHA256=${hash} DOWNLOAD_EXTRACT_TIMESTAMP TRUE
             SOURCE_SUBDIR no-cmake-here)
         FetchContent_MakeAvailable(${name})
-        set(${name} ${${name}_SOURCE_DIR})
+        string(TOLOWER ${name} lower)
+        set(${name} ${${lower}_SOURCE_DIR})
     endif()
 endmacro()
 thug2_dep_sources(IMGUI imgui-1.91.9b-docking
@@ -52,8 +58,11 @@ file(COPY_FILE ${GENERATED}/rt_relit_levels.h.new ${GENERATED}/rt_relit_levels.h
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${THUG2_DECOMP_DIR}/src/engine/gfx/rt_relit_levels.json)
 file(STRINGS ${CMAKE_SOURCE_DIR}/build_sources.txt CORE_SOURCES_RELATIVE)
 list(TRANSFORM CORE_SOURCES_RELATIVE PREPEND "${THUG2_DECOMP_DIR}/" OUTPUT_VARIABLE CORE_SOURCES)
+# (with what the core itself calls that Windows gave it - Win32, SDL, GameSpy, the platform layer - so it links in
+# any order)
 add_library(thug2_core STATIC ${CORE_SOURCES}
-    ${IMGUI}/imgui.cpp ${IMGUI}/imgui_draw.cpp ${IMGUI}/imgui_tables.cpp ${IMGUI}/imgui_widgets.cpp)
+    ${IMGUI}/imgui.cpp ${IMGUI}/imgui_draw.cpp ${IMGUI}/imgui_tables.cpp ${IMGUI}/imgui_widgets.cpp
+    compat/win_shim.cpp backends/platform_linux.cpp backends/gamespy_stubs.cpp backends/sdl_stubs.cpp)
 target_include_directories(thug2_core PUBLIC
     ${THUG2_DECOMP_DIR}/src ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/compat ${CMAKE_SOURCE_DIR}/compat/generated
     ${GENERATED} ${SDL3}/include ${IMGUI} ${GSL}/include ${LZHAM}/include)
@@ -75,9 +84,8 @@ target_compile_options(lzham PRIVATE -w "SHELL:-include stdint.h" "SHELL:-includ
 option(THUG2_DRIVE "build thug2-drive" ON)
 
 # The engine a host links (app/thug2_engine.h): the core, the headless backends and the lockstep turns.
-add_library(thug2_engine STATIC app/engine.cpp app/probe.cpp world/col_writer.cpp compat/win_shim.cpp
-    backends/posix_disk.cpp backends/headless_gpu.cpp backends/scripted_input.cpp
-    backends/platform_linux.cpp backends/gamespy_stubs.cpp backends/sdl_stubs.cpp)
+add_library(thug2_engine STATIC app/engine.cpp app/probe.cpp world/col_writer.cpp
+    backends/posix_disk.cpp backends/headless_gpu.cpp backends/scripted_input.cpp)
 if(ANDROID)
     target_link_libraries(thug2_engine PUBLIC thug2_core lzham log m)
 else()

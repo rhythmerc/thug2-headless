@@ -398,6 +398,17 @@ UINT GetSystemDirectoryA(LPSTR buffer, UINT size)
     std::snprintf(buffer, size, "/usr/lib");
     return static_cast<UINT>(std::strlen(buffer));
 }
+namespace headless {
+// (kept here, with the exe path it gives, so the core needs nothing of the engine's backends)
+static std::string& cache_folder_storage()
+{
+    static std::string folder;
+    return folder;
+}
+void set_cache_folder(const char* folder) { cache_folder_storage() = folder ? folder : ""; }
+const std::string& cache_folder_path() { return cache_folder_storage(); }
+} // namespace headless
+
 DWORD GetModuleFileNameA(HMODULE, LPSTR buffer, DWORD size)
 {
     // (the game keeps its log and settings beside its exe: in the harness's cache folder when a host set one)
