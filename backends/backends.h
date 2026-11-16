@@ -13,7 +13,7 @@ namespace media { class Movie; }
 namespace net { class Transport; }
 namespace input { class Source; }
 
-namespace render { struct GpuTexture; }
+namespace render { struct GpuTexture; struct GpuStateBlock; }
 
 namespace headless {
 
@@ -39,6 +39,13 @@ audio::Device& null_audio_device();
 // The sound output a host plays (capture_audio.cpp), and its clock: a game frame has passed.
 audio::Device& capture_audio_device();
 void sound_frame_done();
+// The game's 2D for a host (capture_hud.cpp): taken down at the end of each frame when asked for (in the game's
+// thread), the GPU passing it each 2D draw while capturing, and told of a texture released.
+void hud_frame_done();
+bool hud_capturing();
+void hud_record(const render::GpuStateBlock& state, uint32_t primitive, const void* indices, uint32_t index_format,
+                uint32_t index_count, const void* vertices, uint32_t vertex_count, uint32_t stride);
+void hud_texture_released(render::GpuTexture* texture);
 media::Movie& null_movie();
 net::Transport& null_transport();
 input::Source& scripted_input();

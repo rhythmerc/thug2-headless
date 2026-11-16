@@ -17,6 +17,7 @@
 #include <string>
 #include <map>
 #include <set>
+#include <tuple>
 #include <vector>
 
 namespace {
@@ -276,6 +277,73 @@ void log_sounds(uint32_t frame)
     }
 }
 
+// THUG2_HUD_SHOT=<file.png> (at THUG2_HUD_FRAME, default 200): the frame's 2D as the host gets it (thug2_hud),
+// rasterised over grey at 640x480: each draw's texture times its colour doubled, blended as the game blends it.
+void shoot_hud(const char* file)
+{
+    uint32_t vertex_count = 0;
+    const uint32_t count = thug2_hud(nullptr, 0, nullptr, 0, &vertex_count);
+    std::vector<Thug2HudDraw> draws(count);
+    std::vector<Thug2HudVertex> vertices(vertex_count);
+    thug2_hud(draws.data(), count, vertices.data(), vertex_count, nullptr);
+    constexpr int W = 640, H = 480;
+    std::vector<float> image(static_cast<size_t>(W) * H * 3, 0.3F);
+    std::map<int32_t, std::tuple<uint32_t, uint32_t, std::vector<uint8_t>>> textures;
+    for (const Thug2HudDraw& d : draws) {
+        if (d.texture >= 0 && !textures.count(d.texture)) {
+            uint32_t w = 0, h = 0;
+            thug2_hud_texture(d.texture, &w, &h, nullptr, 0);
+            std::vector<uint8_t> rgba(static_cast<size_t>(w) * h * 4);
+            if (thug2_hud_texture(d.texture, &w, &h, rgba.data(), static_cast<uint32_t>(rgba.size())) != 0) rgba.clear();
+            textures[d.texture] = {w, h, std::move(rgba)};
+        }
+        const auto* texture = d.texture >= 0 && !std::get<2>(textures[d.texture]).empty() ? &textures[d.texture] : nullptr;
+        for (uint32_t t = 0; t + 2 < d.vertex_count; t += 3) {
+            const Thug2HudVertex* v = &vertices[d.first_vertex + t];
+            const float x0 = std::min({v[0].x, v[1].x, v[2].x}), x1 = std::max({v[0].x, v[1].x, v[2].x});
+            const float y0 = std::min({v[0].y, v[1].y, v[2].y}), y1 = std::max({v[0].y, v[1].y, v[2].y});
+            const float area = (v[1].x - v[0].x) * (v[2].y - v[0].y) - (v[2].x - v[0].x) * (v[1].y - v[0].y);
+            if (std::fabs(area) < 1e-6F) continue;
+            for (int y = std::max(0, static_cast<int>(y0)); y < std::min(H, static_cast<int>(std::ceil(y1))); ++y) {
+                for (int x = std::max(0, static_cast<int>(x0)); x < std::min(W, static_cast<int>(std::ceil(x1))); ++x) {
+                    const float px = x + 0.5F, py = y + 0.5F;
+                    const float b1 = ((px - v[0].x) * (v[2].y - v[0].y) - (v[2].x - v[0].x) * (py - v[0].y)) / area;
+                    const float b2 = ((v[1].x - v[0].x) * (py - v[0].y) - (px - v[0].x) * (v[1].y - v[0].y)) / area;
+                    const float b0 = 1.0F - b1 - b2;
+                    if (b0 < 0 || b1 < 0 || b2 < 0) continue;
+                    float c[4];
+                    for (int k = 0; k < 4; ++k) {
+                        const int shift = k == 3 ? 24 : 16 - 8 * k; // r, g, b, a from ARGB
+                        c[k] = (b0 * ((v[0].color >> shift) & 255) + b1 * ((v[1].color >> shift) & 255) + b2 * ((v[2].color >> shift) & 255)) / 255.0F;
+                    }
+                    if (texture && d.colour_op != 3) {
+                        const auto& [tw, th, rgba] = *texture;
+                        const float u = b0 * v[0].u + b1 * v[1].u + b2 * v[2].u, vv = b0 * v[0].v + b1 * v[1].v + b2 * v[2].v;
+                        const uint32_t tx = std::min(tw - 1, static_cast<uint32_t>(std::max(0.0F, u * tw)));
+                        const uint32_t ty = std::min(th - 1, static_cast<uint32_t>(std::max(0.0F, vv * th)));
+                        const uint8_t* texel = &rgba[(static_cast<size_t>(ty) * tw + tx) * 4];
+                        const float doubled = d.colour_op == 5 ? 2.0F : 1.0F;
+                        for (int k = 0; k < 4; ++k) c[k] = std::min(1.0F, c[k] * texel[k] / 255.0F * doubled);
+                    }
+                    float* o = &image[(static_cast<size_t>(y) * W + x) * 3];
+                    const bool added = d.blend && d.dest_blend == 2;
+                    const float a = d.blend ? c[3] : 1.0F;
+                    for (int k = 0; k < 3; ++k) o[k] = added ? std::min(1.0F, o[k] + c[k] * a) : o[k] * (1 - a) + c[k] * a;
+                }
+            }
+        }
+    }
+    std::vector<uint8_t> bytes(image.size());
+    for (size_t i = 0; i < image.size(); ++i) bytes[i] = static_cast<uint8_t>(std::clamp(image[i], 0.0F, 1.0F) * 255.0F + 0.5F);
+    stbi_write_png(file, W, H, 3, bytes.data(), W * 3);
+    std::printf("DRIVE the 2D (%u draws, %u vertices, %zu textures) written to %s\n", count, vertex_count, textures.size(), file);
+    for (const Thug2HudDraw& d : draws) {
+        const Thug2HudVertex& v = vertices[d.first_vertex];
+        std::printf("DRIVE   draw: %u vertices texture %d blend %u %u/%u op %u at (%.0f, %.0f) colour %08x\n", d.vertex_count, d.texture, d.blend,
+                    d.source_blend, d.dest_blend, d.colour_op, v.x, v.y, v.color);
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -296,6 +364,7 @@ int main(int argc, char** argv)
     uint32_t stepped = 0;
     const bool test = std::getenv("THUG2_WORLD") && std::string(std::getenv("THUG2_WORLD")) == "test";
     const std::vector<Thug2Triangle> world = test ? test_world() : std::vector<Thug2Triangle>{};
+    if (std::getenv("THUG2_HUD_SHOT")) thug2_hud_enable(1);
     for (uint32_t frame = 1; frame <= frames; ++frame) {
         // (the world once the level has put the skater at its own start, else that start overrides ours)
         if (test && frame == 120) {
@@ -328,6 +397,8 @@ int main(int argc, char** argv)
         if (ms > worst_ms) worst_ms = ms;
         if (ms > 20.0) std::printf("DRIVE frame %u took %.0f ms\n", frame, ms);
         log_sounds(frame);
+        static const uint32_t hud_frame = std::getenv("THUG2_HUD_FRAME") ? static_cast<uint32_t>(std::strtoul(std::getenv("THUG2_HUD_FRAME"), nullptr, 10)) : 200;
+        if (std::getenv("THUG2_HUD_SHOT") && frame == hud_frame) shoot_hud(std::getenv("THUG2_HUD_SHOT"));
         static const uint32_t every = std::getenv("THUG2_EVERY") ? static_cast<uint32_t>(std::strtoul(std::getenv("THUG2_EVERY"), nullptr, 10)) : 30;
         if (frame % every == 0) {
             if (skater.present) {

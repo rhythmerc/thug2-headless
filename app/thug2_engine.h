@@ -167,6 +167,40 @@ uint32_t thug2_sound_voices(Thug2Voice* out, uint32_t max);
 /* Sound `sound`'s description, and (with `samples`, room for `count`) its samples. 0, or non-zero if there's none. */
 int thug2_sound(uint32_t sound, Thug2Sound* out, int16_t* samples, uint32_t count);
 
+/* --- The game's 2D (its HUD: trick text, score, special meter, messages), for a host that draws it. ---
+ *
+ * Asked for (thug2_hud_enable), each frame's 2D is taken down at its end: the draws of the game's 2D list in the order
+ * it draws them, each a triangle list of screen vertices (the back buffer's pixels, 640x480, from its top left) with
+ * one texture. A draw's colour is its texture's times its vertices' colour, doubled (colour_op 5, the game's), or the
+ * vertices' alone (3), or the two multiplied (4); blended (blend) by the factors given (Direct3D 9's: 5, 6 the usual
+ * alpha blend; 5, 2 added). Read between steps. */
+typedef struct Thug2HudVertex {
+    float x, y;
+    float u, v;
+    uint32_t color; /* ARGB (Direct3D 9's) */
+} Thug2HudVertex;
+typedef struct Thug2HudDraw {
+    uint32_t first_vertex;
+    uint32_t vertex_count; /* three a triangle */
+    int32_t texture;       /* thug2_hud_texture's; -1: none */
+    uint8_t blend;
+    uint8_t source_blend;
+    uint8_t dest_blend;
+    uint8_t colour_op;
+    uint8_t alpha_op;
+    uint8_t pad[3];
+} Thug2HudDraw;
+
+/* The 2D taken down from the next frame on (or not). */
+void thug2_hud_enable(int on);
+/* The last frame's draws (their number), and with arrays big enough (`max_draws`, `max_vertices`) them and their
+ * vertices; `vertex_count` (may be null): how many vertices there are. */
+uint32_t thug2_hud(Thug2HudDraw* draws, uint32_t max_draws, Thug2HudVertex* vertices, uint32_t max_vertices,
+                   uint32_t* vertex_count);
+/* A draw's texture: its size, and (with `rgba`, `size` its bytes: width x height x 4) its top level as RGBA8. 0, or
+ * non-zero if there's no such texture (released: its id is never used again) or it couldn't be read. */
+int thug2_hud_texture(int32_t texture, uint32_t* width, uint32_t* height, uint8_t* rgba, uint32_t size);
+
 #ifdef __cplusplus
 }
 #endif

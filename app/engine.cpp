@@ -208,6 +208,8 @@ public:
     bool skips_intro_movies() override { return true; }
     bool loop_pace(ext::LoopPace* pace) override
     {
+        // (the frame just run's 2D, for a host that draws the HUD: before the host's turn)
+        headless::hud_frame_done();
         Turns& t = turns();
         std::unique_lock<std::mutex> lock(t.mutex);
         t.at_top = true;

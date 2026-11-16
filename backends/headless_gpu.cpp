@@ -146,7 +146,29 @@ public:
     uint32_t texture_level_count(render::GpuTexture* texture) override { return texture ? static_cast<uint32_t>(as<Texture>(texture)->levels.size()) : 0; }
     uint32_t release_texture(render::GpuTexture* texture) override
     {
+        hud_texture_released(texture);
         delete as<Texture>(texture);
+        return 0;
+    }
+
+    // (the 2D, taken down while the host's HUD is captured: capture_hud.cpp; otherwise dropped)
+    long draw_from_memory(render::GpuPrimitive primitive, uint32_t count, const void* vertices, uint32_t stride) override
+    {
+        if (hud_capturing()) {
+            const uint32_t p = static_cast<uint32_t>(primitive);
+            const uint32_t n = p == 4 ? count * 3 : count + 2;
+            hud_record(state_block(), p, nullptr, 0, 0, vertices, n, stride);
+        }
+        return 0;
+    }
+    long draw_indexed_from_memory(render::GpuPrimitive primitive, uint32_t min_index, uint32_t vertex_count, uint32_t count,
+                                  const void* indices, uint32_t index_format, const void* vertices, uint32_t stride) override
+    {
+        if (hud_capturing()) {
+            const uint32_t p = static_cast<uint32_t>(primitive);
+            const uint32_t n = p == 4 ? count * 3 : count + 2;
+            hud_record(state_block(), p, indices, index_format, n, vertices, min_index + vertex_count, stride);
+        }
         return 0;
     }
 
@@ -317,6 +339,16 @@ public:
     void mark_ready() override { ready_ = true; }
     bool ready() const override { return ready_; }
     bool reset() override { return true; }
+    // (a 640x480 back buffer - the game's own layout, one pixel a layout unit - so the 2D a host draws comes out
+    // where the game puts it: init_direct_3d scales the 640x480 layout to this)
+    render::GpuSettings settings() const override
+    {
+        render::GpuSettings s{};
+        s.width = 640;
+        s.height = 480;
+        s.windowed = true;
+        return s;
+    }
 
 private:
     bool made_ = false;

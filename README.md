@@ -30,6 +30,11 @@ It builds on Linux (x86-64) and Android (arm64, NDK r26) with clang.
   looping, volume, pan and frequency) and `thug2_sound` (a sound's 16-bit PCM). The sound output
   (`backends/capture_audio.cpp`) plays nothing itself; it keeps what the game asks of it. Streams (music, speech)
   aren't played.
+- The game's 2D (its HUD), for a host that draws it: `thug2_hud_enable`, then after each step `thug2_hud` (the
+  frame's 2D draws in the game's order: triangle lists of 640x480 screen vertices, each with a texture, a colour op
+  and a blend) and `thug2_hud_texture` (a draw's texture as RGBA8). Asked for, the game's 2D list is drawn once more at
+  the end of each frame with the in-memory GPU taking the draws down (`backends/capture_hud.cpp`). `thug2-drive`'s
+  `THUG2_HUD_SHOT=<file.png>` (at `THUG2_HUD_FRAME`) rasterises a frame's 2D to a picture.
 
 The units are the game's: inches, y up. Steering left while facing +z turns towards +x, as in a right-handed frame.
 
