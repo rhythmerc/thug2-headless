@@ -136,6 +136,12 @@ uint32_t thug2_skater_texture(uint32_t index, Thug2Texture* out, void* bits, uin
 /* The skater's pose: its palette (a 4x4 matrix a bone, row-major, at most `max`) and its draw matrix. The number of
  * bones (0: no skater). */
 uint32_t thug2_skater_pose(float (*palette)[16], uint32_t max, float draw_matrix[16]);
+/* How many times the game has put the skater somewhere outside its motion (the count only goes up): teleported or
+ * respawned (thug2_teleport and thug2_set_world's placing too), placed by a wall plant - backed off the wall to wait
+ * for a late press, put back for one, set off the wall turned to its new way - turned round at once (rolling
+ * backwards, a turn-around) or its animations mirrored at once (a flip). A host that draws between two steps'
+ * poses blends nothing across a step that changed it: the pose jumped in that step. */
+uint64_t thug2_skater_placements(void);
 
 /* --- The game's sound effects, for a host that plays them. Read between steps. ---
  *

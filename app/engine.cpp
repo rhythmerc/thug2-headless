@@ -54,6 +54,7 @@
 #include "engine/script/host.h"
 #include "engine/sys/startup_init.h"
 #include "engine/sys/editor_mode.h"
+#include "engine/sys/frame_blend.h"
 #include "game/commands/node_hooks.h"
 #include "game/front_end/pad_hooks.h"
 #include "game/front_end/start_level.h"
@@ -388,6 +389,9 @@ extern "C" int thug2_teleport(const float spawn[3], float heading_degrees)
     t.teleport_pending = true;
     return 0;
 }
+
+// (read between steps: the game waits at the top of its loop)
+extern "C" uint64_t thug2_skater_placements(void) { return frame_blend::skater_placements(); }
 
 extern "C" void thug2_set_cache_dir(const char* folder) { headless::set_cache_folder(folder); }
 
