@@ -43,7 +43,13 @@ thug2_dep_sources(SDL3 SDL3-3.2.30 https://github.com/libsdl-org/SDL/releases/do
     4c3b09330d866dc52eb65b66259a6684ad387252ca8c57901b3a2b534eb42e3d)
 
 # The decomp's checkout (github.com/CanuckAussieKev/thug2-decomp, with the linux-headless patches).
-set(THUG2_DECOMP_DIR "${CMAKE_SOURCE_DIR}/../thug2-decomp" CACHE PATH "the thug2-decomp checkout")
+# (a checkout beside this one, else the `decomp` submodule: the revision this one is pinned to)
+if(EXISTS "${CMAKE_SOURCE_DIR}/../thug2-decomp/src")
+    set(THUG2_DECOMP_DEFAULT "${CMAKE_SOURCE_DIR}/../thug2-decomp")
+else()
+    set(THUG2_DECOMP_DEFAULT "${CMAKE_SOURCE_DIR}/decomp")
+endif()
+set(THUG2_DECOMP_DIR "${THUG2_DECOMP_DEFAULT}" CACHE PATH "the thug2-decomp checkout")
 # The relit mode's per-level table, made a header from the decomp's JSON (as its src/engine/CMakeLists.txt does).
 set(GENERATED ${CMAKE_BINARY_DIR}/generated)
 file(READ ${THUG2_DECOMP_DIR}/src/engine/gfx/rt_relit_levels.json RELIT_LEVELS_JSON)

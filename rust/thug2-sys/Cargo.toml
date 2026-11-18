@@ -1,0 +1,13 @@
+[package]
+name = "thug2-sys"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "The THUG2 engine (thug2-decomp, run headless by thug2-headless), stepped a frame at a time: its C API and a safe wrapper"
+links = "thug2_engine"
+build = "build.rs"
+
+[lib]
+name = "thug2_sys"
+path = "src/lib.rs"

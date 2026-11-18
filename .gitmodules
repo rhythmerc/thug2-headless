@@ -1,0 +1,4 @@
+[submodule "decomp"]
+	path = decomp
+	url = https://github.com/rhythmerc/thug2-decomp.git
+	branch = linux-headless

@@ -38,6 +38,26 @@ It builds on Linux (x86-64) and Android (arm64, NDK r26) with clang.
 
 The units are the game's: inches, y up. Steering left while facing +z turns towards +x, as in a right-handed frame.
 
+## For a Rust host
+
+Two crates, in this repository's Cargo workspace:
+
+- `rust/thug2-sys`: the C API and a safe wrapper. Its build script builds this CMake project (Ninja; clang on Linux,
+  the NDK's toolchain for Android arm64).
+- `rust/thug2-engine`: THUG2 as the [buildAR engine contract](https://github.com/rhythmerc/buildar-engine-core)
+  (`engine_core::EngineCore`): its stage, input, model, HUD, sound and the game files it runs on. A host must pin the
+  same `engine-core` revision as this workspace.
+
+A host depends on them by revision (Cargo fetches the `decomp` submodule with it):
+
+```toml
+thug2-engine = { git = "https://github.com/rhythmerc/thug2-headless", rev = "..." }
+```
+
+The decomp comes from `THUG2_DECOMP_DIR` when set, else a `thug2-decomp` checkout beside this one, else the `decomp`
+submodule (`git submodule update --init`). `cargo test --release` runs the crates' tests; with `THUG2_GAME_DIR` (your
+installed game) the engine's own run too.
+
 ## Layout
 
 - `app/`: the API (`engine.cpp`: the decomp's start-up with headless backends, and the lockstep turns), the skater
@@ -48,6 +68,7 @@ The units are the game's: inches, y up. Steering left while facing +z turns towa
 - `compat/`: what MSVC and Win32 give the decomp's code. `msvc_crt.h` is forced into every file; `windows.h` is the
   subset the core uses, with POSIX underneath.
 - `world/`: the collision file writer.
+- `rust/`: the Rust crates (above). `decomp/`: thug2-decomp, pinned.
 - `build_sources.txt`: the decomp sources built here (from `tools/sources.py` and `tools/syntax.sh`).
 
 ## Building

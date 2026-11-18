@@ -1,0 +1,15 @@
+[package]
+name = "thug2-engine"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "THUG2's side of the buildAR engine contract (engine-core): its game knowledge over thug2-sys, with no Bevy."
+
+[lib]
+name = "thug2_engine"
+path = "src/lib.rs"
+
+[dependencies]
+engine-core.workspace = true
+thug2-sys = { path = "../thug2-sys", version = "0.1.0" }

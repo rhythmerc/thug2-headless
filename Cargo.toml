@@ -1,0 +1,18 @@
+# The engine's Rust side, for hosts: `thug2-sys` (the C API, app/thug2_engine.h, and a safe wrapper; its build.rs
+# builds this repository's CMake project) and `thug2-engine` (THUG2 as the buildAR engine contract, engine-core).
+[workspace]
+members = ["rust/thug2-sys", "rust/thug2-engine"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "MIT"
+
+[workspace.dependencies]
+# The engine contract: https://github.com/rhythmerc/buildar-engine-core. A host must pin the same revision.
+engine-core = { git = "https://github.com/rhythmerc/buildar-engine-core", rev = "1da95abb6dc14ea3d6cc72f8964014f8a1d24678" }
+
+[profile.dev]
+opt-level = 3
