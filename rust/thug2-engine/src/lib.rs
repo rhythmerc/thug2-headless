@@ -1,7 +1,7 @@
 //! THUG2's side of the engine contract ([`engine_core`]): what the app needs to know about THUG2 to host it, said
 //! as the contract's plain data, over the engine itself (`thug2-sys`). No Bevy.
 //!
-//! It lives in thug2-headless beside `thug2-sys`; a host (skate3-quest-ar) depends on it by revision.
+//! It lives in thug2-headless beside `thug2-sys`; a host (buildAR) depends on it by revision.
 //!
 //! - [`engine`]: the game as the runtime drives it ([`engine_core::EngineCore`]), made on a worker by its factory.
 //! - [`hud`]: the game's 2D as a [`engine_core::hud::HudFrame`]: which draw is which part, and where each part goes.
@@ -19,7 +19,7 @@ pub mod model;
 pub mod sound;
 pub mod stage;
 
-/// The player's THUG2 files: their installed PC game, the folder holding `Data` (skate3-quest-ar's `docs/THUG2.md`).
+/// The player's THUG2 files: their installed PC game, the folder holding `Data` (buildAR's `docs/THUG2.md`).
 pub const DATA: engine_core::GameFiles = engine_core::GameFiles {
     drop: "THUG2",
     folder: "thug2",

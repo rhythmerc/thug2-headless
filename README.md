@@ -3,7 +3,7 @@
 [thug2-decomp](https://github.com/CanuckAussieKev/thug2-decomp)'s game code (Tony Hawk's Underground 2) built as a
 library a host steps one game frame at a time, with no window and no rendering or sound of its own: the skater's physics,
 tricks and scripts, running on the host's own collision and rails. It is the THUG2 engine of
-[skate3-quest-ar](https://github.com/rhythmerc/skate3-quest-ar) (a Quest 3 AR skateboarding app), which links it through
+[buildAR](https://github.com/rhythmerc/buildar) (a Quest 3 AR runtime for game engines), which links it through
 its `thug2-sys` crate.
 
 It builds on Linux (x86-64) and Android (arm64, NDK r26) with clang.

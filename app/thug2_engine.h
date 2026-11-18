@@ -1,4 +1,4 @@
-/* The THUG2 engine, stepped by its host one game frame at a time (the C API skate3-quest-ar calls).
+/* The THUG2 engine, stepped by its host one game frame at a time (the C API buildAR calls).
  *
  * thug2_boot starts the game on a thread of its own and returns once the game's main loop is ready for its first
  * frame. After that the game and its host take turns, never running together: thug2_step hands the game a pad, lets it

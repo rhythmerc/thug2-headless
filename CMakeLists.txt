@@ -1,5 +1,5 @@
 # The THUG2 decomp's core (base, formats, wire, engine, script, game, render_pc, the app's start-up) built headless on
-# Linux, with the harness's own backends: what the go/no-go spike for a THUG2 engine in skate3-quest-ar runs.
+# Linux, with the harness's own backends: what the go/no-go spike for a THUG2 engine in buildAR runs.
 cmake_minimum_required(VERSION 3.27)
 project(thug2_headless LANGUAGES C CXX)
 # (optimised by default: the decomp's core leaves calls into parts not built here - the profiler, the script debugger,
