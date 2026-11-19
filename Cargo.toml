@@ -12,7 +12,7 @@ license = "MIT"
 
 [workspace.dependencies]
 # The engine contract: https://github.com/rhythmerc/buildar-engine-core. A host must pin the same revision.
-engine-core = { git = "https://github.com/rhythmerc/buildar-engine-core", rev = "1da95abb6dc14ea3d6cc72f8964014f8a1d24678" }
+engine-core = { git = "https://github.com/rhythmerc/buildar-engine-core", rev = "1d66ba37ca305a637ba547fb77aa389539bee9c8" }
 
 [profile.dev]
 opt-level = 3
